@@ -328,6 +328,9 @@ export default function LandingPage() {
       </section>
 
 
+      {/* ── Video ── */}
+      <VideoPlayer />
+
       {/* ── Not Blackboard ── */}
       <section className="lp-section lp-diff-section" id="why">
         <div className="lp-section-inner">
@@ -425,10 +428,6 @@ export default function LandingPage() {
           </div>
         </div>
       </section>
-
-      {/* ── Video ── */}
-      <VideoPlayer />
-
 
       {/* ── Pricing ── */}
       <div id="pricing" className="lp-pricing-section">
