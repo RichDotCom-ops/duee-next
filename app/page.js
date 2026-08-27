@@ -1,5 +1,70 @@
 'use client';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+
+const VIDEO_ID = '83iSYcQchVQ';
+
+function VideoPlayer() {
+  const [playing, setPlaying] = useState(false);
+  const playerRef = useRef(null);
+
+  function play() {
+    setPlaying(true);
+  }
+
+  return (
+    <section className="lp-video-section lp-reveal">
+      <div className="lp-video-inner">
+        <div style={{ textAlign: 'center', marginBottom: 40 }}>
+          <div className="lp-label" style={{ color: '#4ade80' }}>Watch it in action</div>
+          <h2 className="lp-h2" style={{ color: 'white' }}>See duee. in 60 seconds</h2>
+          <p className="lp-p" style={{ color: '#94a3b8', margin: '0 auto' }}>
+            Track assignments, chat with your AI tutor, and never miss a deadline.
+          </p>
+        </div>
+
+        <div
+          className={`lp-video-player${playing ? ' playing' : ''}`}
+          ref={playerRef}
+          onClick={!playing ? play : undefined}
+          style={{ cursor: playing ? 'default' : 'pointer' }}
+        >
+          {!playing ? (
+            <>
+              {/* YouTube thumbnail */}
+              <img
+                className="lp-video-thumb"
+                src={`https://img.youtube.com/vi/${VIDEO_ID}/maxresdefault.jpg`}
+                alt="duee. demo video"
+                onError={e => { e.target.src = `https://img.youtube.com/vi/${VIDEO_ID}/hqdefault.jpg`; }}
+              />
+              <div className="lp-video-overlay">
+                <div className="lp-play-btn">
+                  <svg width="28" height="28" viewBox="0 0 24 24" fill="white">
+                    <polygon points="5 3 19 12 5 21 5 3"/>
+                  </svg>
+                </div>
+              </div>
+              <div className="lp-video-label">
+                <span className="lp-video-dot" />
+                Watch the demo
+              </div>
+            </>
+          ) : (
+            <iframe
+              className="lp-video-frame"
+              src={`https://www.youtube.com/embed/${VIDEO_ID}?autoplay=1&rel=0&modestbranding=1&color=white&iv_load_policy=3`}
+              title="duee. demo"
+              allow="autoplay; fullscreen; picture-in-picture"
+              allowFullScreen
+            />
+          )}
+        </div>
+
+        <p className="lp-video-caption">No sign-up required to watch · 60 seconds</p>
+      </div>
+    </section>
+  );
+}
 import Link from 'next/link';
 
 const WORDS = ['every deadline.', 'finals week.', 'your GPA.', 'every class.'];
@@ -374,6 +439,9 @@ export default function LandingPage() {
           </div>
         </div>
       </section>
+
+      {/* ── Video ── */}
+      <VideoPlayer />
 
       {/* ── Testimonials ── */}
       <section className="lp-testi-section">
