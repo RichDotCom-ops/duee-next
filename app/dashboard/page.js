@@ -153,6 +153,61 @@ export default function DashboardPage() {
   return (
     <AppLayout title="Dashboard" user={user}>
 
+      {/* ── Onboarding ── shown only when user has no classes yet */}
+      {classes.length === 0 && (
+        <div style={{
+          margin: '0 0 24px',
+          background: 'linear-gradient(135deg, #f0fdf4 0%, #dcfce7 100%)',
+          border: '1.5px solid #bbf7d0',
+          borderRadius: 16,
+          padding: '28px 32px',
+        }}>
+          <div style={{ display: 'flex', alignItems: 'flex-start', gap: 20, flexWrap: 'wrap' }}>
+            <div style={{ fontSize: 36, lineHeight: 1 }}>👋</div>
+            <div style={{ flex: 1, minWidth: 200 }}>
+              <div style={{ fontWeight: 800, fontSize: 18, color: '#14532d', marginBottom: 6 }}>
+                Welcome to duee. — let's get you set up
+              </div>
+              <div style={{ fontSize: 14, color: '#166534', marginBottom: 20, lineHeight: 1.6 }}>
+                You're 2 steps away from never missing a deadline again.
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                <Link href="/classes" style={{
+                  display: 'inline-flex', alignItems: 'center', gap: 10,
+                  background: '#16a34a', color: 'white', borderRadius: 10,
+                  padding: '11px 20px', fontWeight: 700, fontSize: 14, width: 'fit-content',
+                  boxShadow: '0 4px 14px rgba(22,163,74,.3)',
+                }}>
+                  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                  Step 1 — Add your first class
+                </Link>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: '#15803d', fontSize: 13 }}>
+                  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+                  Or just tell the AI: "Add my Chemistry class on Mondays"
+                </div>
+              </div>
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8, fontSize: 13, color: '#166534', minWidth: 160 }}>
+              {[['Add classes', true], ['Add assignments', false], ['AI study help', false]].map(([step, done]) => (
+                <div key={step} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <div style={{
+                    width: 20, height: 20, borderRadius: '50%', flexShrink: 0,
+                    background: done ? '#16a34a' : '#bbf7d0',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  }}>
+                    {done
+                      ? <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="3"><polyline points="20 6 9 17 4 12"/></svg>
+                      : <div style={{ width: 6, height: 6, borderRadius: '50%', background: '#16a34a', opacity: .4 }} />
+                    }
+                  </div>
+                  <span style={{ opacity: done ? 1 : .6 }}>{step}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* ── Hero Banner ── */}
       <div className="db-hero">
         <div className="db-hero-orb" />

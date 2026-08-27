@@ -452,7 +452,7 @@ export default function LandingPage() {
               <Link href="/login?mode=signup" className="lp-plan-cta lp-cta-free">Get Started Free</Link>
               <div className="lp-divider" />
               <div className="lp-features">
-                {['All classes & assignments', 'Interactive calendar', 'Real browser notifications', 'Study timer & dark mode', '20 AI messages / day'].map(f => <div className="lp-feat" key={f}><span className="y">✓</span> {f}</div>)}
+                {['All classes & assignments', 'Interactive calendar', 'Real browser notifications', 'Study timer & dark mode', '50 AI messages / day'].map(f => <div className="lp-feat" key={f}><span className="y">✓</span> {f}</div>)}
                 <div className="lp-feat"><span className="n">–</span> Unlimited AI</div>
               </div>
             </div>
@@ -527,6 +527,10 @@ export default function LandingPage() {
           <Link href="/pricing">Pricing</Link>
           <Link href="/blog">Blog</Link>
           <Link href="/contact">Contact</Link>
+          <a href="https://www.instagram.com/__duee___" target="_blank" rel="noopener noreferrer" style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="2" width="20" height="20" rx="5"/><circle cx="12" cy="12" r="4"/><circle cx="17.5" cy="6.5" r="1" fill="currentColor" stroke="none"/></svg>
+            Instagram
+          </a>
         </div>
       </footer>
     </>

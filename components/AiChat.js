@@ -7,6 +7,23 @@ import { showToast } from '../lib/utils';
 // ── Storage keys ─────────────────────────────────────────────────────────────
 const MEM_KEY   = uid => `duee_ai_mem_${uid}`;
 const CHATS_KEY = uid => `duee_ai_chats_${uid}`;
+const USAGE_KEY = uid => `duee_ai_usage_${uid}`;
+const FREE_LIMIT = 50;
+
+function loadUsage(uid) {
+  try {
+    const d = JSON.parse(localStorage.getItem(USAGE_KEY(uid)));
+    const today = new Date().toISOString().split('T')[0];
+    if (d?.date === today) return d.count || 0;
+    return 0;
+  } catch { return 0; }
+}
+function bumpUsage(uid) {
+  const today = new Date().toISOString().split('T')[0];
+  const count = loadUsage(uid) + 1;
+  localStorage.setItem(USAGE_KEY(uid), JSON.stringify({ date: today, count }));
+  return count;
+}
 
 // ── Memory helpers ────────────────────────────────────────────────────────────
 function loadMemory(uid) {
@@ -175,6 +192,8 @@ export default function AiChat() {
   const [chats,       setChats]       = useState([]);
   const [memories,    setMemoriesState] = useState([]);
   const [image,       setImage]       = useState(null); // base64 dataURL
+  const [usageCount,  setUsageCount]  = useState(0);
+  const [isPro,       setIsPro]       = useState(false);
 
   const bottomRef   = useRef(null);
   const inputRef    = useRef(null);
@@ -198,6 +217,12 @@ export default function AiChat() {
         const [cls, asgn] = await Promise.all([DB.getClasses(u.id), DB.getAssignments(u.id)]);
         setClasses(cls); setAssignments(asgn); setDataReady(true);
         setMemoriesState(loadMemory(u.id));
+        setUsageCount(loadUsage(u.id));
+        try {
+          const subRes = await fetch(`/api/subscription?userId=${u.id}`);
+          const sub = await subRes.json();
+          setIsPro(sub.pro || false);
+        } catch {}
         const saved = loadChats(u.id);
         setChats(saved);
         const today = new Date().toISOString().split('T')[0];
@@ -270,6 +295,17 @@ export default function AiChat() {
   const send = useCallback(async () => {
     const text = input.trim();
     if ((!text && !image) || loading) return;
+
+    // Check daily limit for free users
+    if (!isPro) {
+      const used = loadUsage(user?.id);
+      if (used >= FREE_LIMIT) {
+        const next = [...messages, { role: 'user', content: text, id: Date.now() }, { role: 'assistant', content: `You've used all ${FREE_LIMIT} free AI messages for today. Upgrade to Pro for unlimited access — or come back tomorrow.`, id: Date.now() + 1, isLimit: true }];
+        setMessages(next); messagesRef.current = next;
+        setInput(''); setImage(null);
+        return;
+      }
+    }
 
     const userMsg = {
       role: 'user',
@@ -358,6 +394,7 @@ export default function AiChat() {
       const aiMsg = { role: 'assistant', content: data.content + (actionNotes.length ? '\n\n' + actionNotes.join('\n') : ''), id: Date.now() };
       const next = [...history, aiMsg];
       setMessages(next); messagesRef.current = next; autosave(next);
+      if (!isPro && user?.id) setUsageCount(bumpUsage(user.id));
     } catch {
       const next = [...history, { role: 'assistant', content: 'Connection error. Please try again.', id: Date.now() }];
       setMessages(next); messagesRef.current = next;
@@ -399,6 +436,11 @@ export default function AiChat() {
               <div className="ai-status-dot" />
               <span>Duee AI</span>
               {dataReady && <span className="ai-live-badge">LIVE</span>}
+              {!isPro && (
+                <span style={{ fontSize: 10, color: usageCount >= FREE_LIMIT ? '#dc2626' : '#94a3b8', marginLeft: 4 }}>
+                  {FREE_LIMIT - usageCount}/{FREE_LIMIT}
+                </span>
+              )}
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
               <button className={`ai-header-btn${view === 'memory' ? ' active' : ''}`} onClick={() => setView(v => v === 'memory' ? 'chat' : 'memory')} title="Memory">
