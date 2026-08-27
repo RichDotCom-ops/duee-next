@@ -1,10 +1,9 @@
-// Text models — tried in order until one succeeds
+// Text models — tried in order until one succeeds (verified working)
 const TEXT_MODELS = [
-  'nvidia/nemotron-3-ultra-550b-a55b:free',
   'minimax/minimax-m3:free',
+  'openrouter/free',
+  'nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free',
   'nvidia/nemotron-3-super-120b-a12b:free',
-  'google/gemma-4-31b-it:free',
-  'minimax/minimax-m2.7:free',
 ];
 
 // Vision models — tried in order; if all fail we strip image and answer text-only
@@ -115,21 +114,31 @@ function stripTags(text) {
 }
 
 async function callModel(model, system, messages) {
-  return fetch('https://openrouter.ai/api/v1/chat/completions', {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${process.env.OPENROUTER_API_KEY}`,
-      'Content-Type': 'application/json',
-      'HTTP-Referer': 'https://duee.app',
-      'X-Title': 'Duee Student Planner',
-    },
-    body: JSON.stringify({
-      model,
-      messages: [{ role: 'system', content: system }, ...messages],
-      max_tokens: 1200,
-      temperature: 0.65,
-    }),
-  });
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 8000); // 8s per model max
+  try {
+    const res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+      method: 'POST',
+      signal: controller.signal,
+      headers: {
+        'Authorization': `Bearer ${process.env.OPENROUTER_API_KEY}`,
+        'Content-Type': 'application/json',
+        'HTTP-Referer': 'https://duee.online',
+        'X-Title': 'Duee Student Planner',
+      },
+      body: JSON.stringify({
+        model,
+        messages: [{ role: 'system', content: system }, ...messages],
+        max_tokens: 1000,
+        temperature: 0.65,
+      }),
+    });
+    clearTimeout(timeout);
+    return res;
+  } catch {
+    clearTimeout(timeout);
+    return null; // timeout or network error — try next model
+  }
 }
 
 export async function POST(request) {
@@ -145,38 +154,34 @@ export async function POST(request) {
 
     let res, raw;
 
-    if (hasImage) {
-      // Try vision models first
-      for (const model of VISION_MODELS) {
-        res = await callModel(model, system, messages);
-        raw = await res.json();
-        if (res.ok && !raw.error) break;
-        res = null; raw = null;
+    async function tryModels(modelList, msgs) {
+      for (const model of modelList) {
+        const r = await callModel(model, system, msgs);
+        if (!r) continue; // timed out
+        let j;
+        try { j = await r.json(); } catch { continue; }
+        if (r.ok && !j.error) return { res: r, raw: j };
       }
-      // If all vision models failed, strip images and answer text-only
-      if (!res || !res.ok || raw?.error) {
+      return { res: null, raw: null };
+    }
+
+    if (hasImage) {
+      ({ res, raw } = await tryModels(VISION_MODELS, messages));
+      if (!res) {
+        // Strip images, fall back to text models
         const textOnly = messages.map(m =>
           Array.isArray(m.content)
             ? { ...m, content: m.content.filter(p => p.type === 'text').map(p => p.text).join(' ') || '(image attached)' }
             : m
         );
-        for (const model of TEXT_MODELS) {
-          res = await callModel(model, system, textOnly);
-          raw = await res.json();
-          if (res.ok && !raw.error) {
-            // Prepend a note that image couldn't be processed
-            const content = raw.choices?.[0]?.message?.content || '';
-            raw = { ...raw, choices: [{ message: { content: "(I couldn't fully analyze your image right now, but I'll help with your text question.)\n\n" + content } }] };
-            break;
-          }
+        ({ res, raw } = await tryModels(TEXT_MODELS, textOnly));
+        if (res && raw) {
+          const content = raw.choices?.[0]?.message?.content || '';
+          raw = { ...raw, choices: [{ message: { content: "(I couldn't analyze your image right now, but here's help with your question.)\n\n" + content } }] };
         }
       }
     } else {
-      for (const model of TEXT_MODELS) {
-        res = await callModel(model, system, messages);
-        raw = await res.json();
-        if (res.ok && !raw.error) break;
-      }
+      ({ res, raw } = await tryModels(TEXT_MODELS, messages));
     }
 
     if (!res?.ok || raw?.error) {
