@@ -1,36 +1,61 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# duee. — AI-Powered Student Planner
+
+**duee.** is a smart student planner with a built-in AI tutor, grade calculator, study timer, and assignment tracker.
+
+## Features
+
+- **AI Tutor** — chat with an AI that knows your classes and deadlines. Ask "I have 30 minutes, what should I work on?" and get a prioritized list.
+- **Smart Calendar** — add and manage assignments directly from month, week, and day views.
+- **Grade Calculator** — track grades per class with weighted or points-based grading and a final exam projector.
+- **Study Timer** — Pomodoro timer that tracks study time daily.
+- **Streaks** — daily login streaks to keep you consistent.
+- **Persistent AI Memory** — the AI remembers things about you across conversations.
+- **Chat History** — all AI conversations are saved and searchable.
+- **Image Upload** — paste screenshots of assignments into the AI chat.
+- **Dark Mode** — full dark mode support.
+- **Pro Plan** — unlimited AI messages and image analysis via Lemon Squeezy.
+
+## Tech Stack
+
+- **Framework** — Next.js 15 (App Router)
+- **Auth & DB** — Supabase
+- **AI** — OpenRouter (dynamic free model selection with vision fallback)
+- **Payments** — Lemon Squeezy
+- **Styling** — Custom CSS (Space Grotesk font)
 
 ## Getting Started
 
-First, run the development server:
-
 ```bash
+npm install
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Open [http://localhost:3000](http://localhost:3000).
 
-You can start editing the page by modifying `app/page.js`. The page auto-updates as you edit the file.
+## Environment Variables
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+Create a `.env.local` file:
 
-## Learn More
+```env
+OPENROUTER_API_KEY=
 
-To learn more about Next.js, take a look at the following resources:
+NEXT_PUBLIC_APP_URL=https://yourdomain.com
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+LEMONSQUEEZY_API_KEY=
+LEMONSQUEEZY_STORE_ID=
+LEMONSQUEEZY_WEEKLY_VARIANT_ID=
+LEMONSQUEEZY_MONTHLY_VARIANT_ID=
+LEMONSQUEEZY_WEBHOOK_SECRET=
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+SUPABASE_SERVICE_ROLE_KEY=
 
-## Deploy on Vercel
+ADMIN_SECRET=
+```
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+## Admin Dashboard
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+Visit `/admin` and enter your `ADMIN_SECRET` to see total users, active users, signup chart, platform usage, subscribers, and estimated revenue.
+
+## Deployment
+
+Deploy to [Vercel](https://vercel.com) — connect the GitHub repo and add environment variables in the Vercel dashboard.
