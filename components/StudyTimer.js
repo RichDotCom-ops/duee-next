@@ -21,8 +21,31 @@ function addTodayMinutes(uid, mins) {
   localStorage.setItem(TODAY_KEY(uid), JSON.stringify({ date: today, minutes: current + mins }));
 }
 
-const DEFAULT_WORK = 25;
-const DEFAULT_BREAK = 5;
+function playAlarm(type = 'work') {
+  try {
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    const times = type === 'work' ? [0, 0.35, 0.7] : [0, 0.25];
+    times.forEach(offset => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.type = 'sine';
+      osc.frequency.value = type === 'work' ? 880 : 660;
+      gain.gain.setValueAtTime(0, ctx.currentTime + offset);
+      gain.gain.linearRampToValueAtTime(0.5, ctx.currentTime + offset + 0.05);
+      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + offset + 0.4);
+      osc.start(ctx.currentTime + offset);
+      osc.stop(ctx.currentTime + offset + 0.45);
+    });
+  } catch {}
+}
+
+const PRESETS = [
+  { label: '25 / 5', work: 25, brk: 5 },
+  { label: '50 / 10', work: 50, brk: 10 },
+  { label: '90 / 20', work: 90, brk: 20 },
+];
 
 export default function StudyTimer() {
   const [open, setOpen] = useState(false);
@@ -30,20 +53,20 @@ export default function StudyTimer() {
   const [assignments, setAssignments] = useState([]);
   const [selectedId, setSelectedId] = useState('');
   const [mode, setMode] = useState('work');
-  const [workMins, setWorkMins] = useState(DEFAULT_WORK);
-  const [breakMins, setBreakMins] = useState(DEFAULT_BREAK);
-  const [seconds, setSeconds] = useState(DEFAULT_WORK * 60);
+  const [workMins, setWorkMins] = useState(25);
+  const [breakMins, setBreakMins] = useState(5);
+  const [seconds, setSeconds] = useState(25 * 60);
   const [running, setRunning] = useState(false);
   const [sessions, setSessions] = useState(0);
   const [todayMins, setTodayMins] = useState(0);
-  const [showSettings, setShowSettings] = useState(false);
-  const [draftWork, setDraftWork] = useState(DEFAULT_WORK);
-  const [draftBreak, setDraftBreak] = useState(DEFAULT_BREAK);
+  const [tab, setTab] = useState('timer'); // 'timer' | 'settings'
+  const [draftWork, setDraftWork] = useState(25);
+  const [draftBreak, setDraftBreak] = useState(5);
 
   const intervalRef = useRef(null);
   const modeRef = useRef('work');
-  const workRef = useRef(DEFAULT_WORK);
-  const breakRef = useRef(DEFAULT_BREAK);
+  const workRef = useRef(25);
+  const breakRef = useRef(5);
   const userRef = useRef(null);
 
   useEffect(() => { modeRef.current = mode; }, [mode]);
@@ -71,10 +94,12 @@ export default function StudyTimer() {
       const uid = userRef.current?.id;
       if (uid) { addTodayMinutes(uid, workRef.current); setTodayMins(loadTodayMinutes(uid)); }
       setSessions(s => s + 1);
+      playAlarm('work');
       showToast(`${workRef.current} min session complete! Take a break.`, 'success');
       setMode('break');
       setSeconds(breakRef.current * 60);
     } else {
+      playAlarm('break');
       showToast('Break over — time to focus!', 'success');
       setMode('work');
       setSeconds(workRef.current * 60);
@@ -104,13 +129,22 @@ export default function StudyTimer() {
 
   function skip() { handleTimerEnd(); }
 
+  function applyPreset(p) {
+    setWorkMins(p.work); setBreakMins(p.brk);
+    setDraftWork(p.work); setDraftBreak(p.brk);
+    workRef.current = p.work; breakRef.current = p.brk;
+    setRunning(false); setMode('work');
+    setSeconds(p.work * 60);
+  }
+
   function applySettings() {
-    setWorkMins(draftWork); setBreakMins(draftBreak);
-    workRef.current = draftWork; breakRef.current = draftBreak;
-    setRunning(false);
-    setMode('work');
-    setSeconds(draftWork * 60);
-    setShowSettings(false);
+    const w = Math.max(1, Math.min(180, draftWork));
+    const b = Math.max(1, Math.min(60, draftBreak));
+    setWorkMins(w); setBreakMins(b);
+    workRef.current = w; breakRef.current = b;
+    setRunning(false); setMode('work');
+    setSeconds(w * 60);
+    setTab('timer');
   }
 
   function switchMode(m) {
@@ -144,32 +178,83 @@ export default function StudyTimer() {
                 </span>
               )}
             </div>
-            <div style={{ display: 'flex', gap: 4 }}>
+            <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
               {todayMins > 0 && (
-                <span style={{ fontSize: 10, color: 'var(--text-muted)', padding: '2px 6px', alignSelf: 'center' }}>
+                <span style={{ fontSize: 10, color: 'var(--text-muted)', padding: '2px 6px' }}>
                   {todayStr} today
                 </span>
               )}
-              <button className="ai-close-btn" onClick={() => setShowSettings(s => !s)} title="Settings">
-                <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
-              </button>
               <button className="ai-close-btn" onClick={() => setOpen(false)}>
                 <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
               </button>
             </div>
           </div>
 
-          {showSettings ? (
-            <div style={{ padding: '16px 20px', display: 'flex', flexDirection: 'column', gap: 12 }}>
-              <div className="form-group" style={{ marginBottom: 0 }}>
-                <label style={{ fontSize: 12 }}>Work session (minutes)</label>
-                <input className="form-control" type="number" min="1" max="120" value={draftWork} onChange={e => setDraftWork(Number(e.target.value))} />
+          {/* Tabs */}
+          <div style={{ display: 'flex', borderBottom: '1px solid var(--border)', padding: '0 16px' }}>
+            {['timer', 'settings'].map(t => (
+              <button key={t} onClick={() => setTab(t)} style={{
+                flex: 1, padding: '8px 0', fontSize: 12, fontWeight: 600,
+                background: 'none', border: 'none', cursor: 'pointer',
+                color: tab === t ? 'var(--green)' : 'var(--text-muted)',
+                borderBottom: tab === t ? '2px solid var(--green)' : '2px solid transparent',
+                textTransform: 'capitalize', letterSpacing: '.02em',
+              }}>
+                {t === 'timer' ? 'Timer' : 'Customize'}
+              </button>
+            ))}
+          </div>
+
+          {tab === 'settings' ? (
+            <div style={{ padding: '16px 20px', display: 'flex', flexDirection: 'column', gap: 14 }}>
+              {/* Presets */}
+              <div>
+                <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 8 }}>Quick presets</div>
+                <div style={{ display: 'flex', gap: 6 }}>
+                  {PRESETS.map(p => (
+                    <button key={p.label} onClick={() => applyPreset(p)} style={{
+                      flex: 1, padding: '7px 0', fontSize: 11, fontWeight: 700,
+                      borderRadius: 8, border: '1.5px solid var(--border)',
+                      background: workMins === p.work ? 'var(--green-100)' : 'white',
+                      color: workMins === p.work ? 'var(--green)' : 'var(--text-secondary)',
+                      cursor: 'pointer',
+                    }}>{p.label}</button>
+                  ))}
+                </div>
               </div>
-              <div className="form-group" style={{ marginBottom: 0 }}>
-                <label style={{ fontSize: 12 }}>Break duration (minutes)</label>
-                <input className="form-control" type="number" min="1" max="60" value={draftBreak} onChange={e => setDraftBreak(Number(e.target.value))} />
+
+              {/* Custom inputs */}
+              <div>
+                <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 8 }}>Custom duration</div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                  <div className="form-group" style={{ marginBottom: 0 }}>
+                    <label style={{ fontSize: 11 }}>Focus (min)</label>
+                    <input
+                      className="form-control"
+                      type="number" min="1" max="180"
+                      value={draftWork}
+                      onChange={e => setDraftWork(Number(e.target.value))}
+                    />
+                  </div>
+                  <div className="form-group" style={{ marginBottom: 0 }}>
+                    <label style={{ fontSize: 11 }}>Break (min)</label>
+                    <input
+                      className="form-control"
+                      type="number" min="1" max="60"
+                      value={draftBreak}
+                      onChange={e => setDraftBreak(Number(e.target.value))}
+                    />
+                  </div>
+                </div>
               </div>
-              <button className="btn btn-primary btn-sm" onClick={applySettings}>Apply</button>
+
+              <button className="btn btn-primary btn-sm" onClick={applySettings} style={{ marginTop: 2 }}>
+                Apply &amp; Reset Timer
+              </button>
+
+              <p style={{ fontSize: 11, color: 'var(--text-muted)', textAlign: 'center' }}>
+                An alarm will sound when each session ends.
+              </p>
             </div>
           ) : (
             <div className="timer-body">
@@ -193,7 +278,7 @@ export default function StudyTimer() {
                 <div className="timer-ring-label">
                   <div className="timer-time">{timeStr}</div>
                   <div className="timer-mode-label" style={{ color: mode === 'work' ? 'var(--green)' : 'var(--blue)' }}>
-                    {mode === 'work' ? 'Focus' : 'Break'}
+                    {mode === 'work' ? `Focus · ${workMins}m` : `Break · ${breakMins}m`}
                   </div>
                 </div>
               </div>
@@ -206,7 +291,7 @@ export default function StudyTimer() {
               </div>
 
               <div className="timer-controls">
-                <button className="timer-ctrl-btn" onClick={reset} title="Reset" disabled={running && seconds === (mode === 'work' ? workMins : breakMins) * 60}>
+                <button className="timer-ctrl-btn" onClick={reset} title="Reset">
                   <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 .49-3.5"/></svg>
                 </button>
                 <button className="timer-play-btn" onClick={() => setRunning(r => !r)}>

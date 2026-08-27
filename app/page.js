@@ -102,20 +102,6 @@ const FEATURES = [
   },
 ];
 
-const TESTIMONIALS = [
-  {
-    initials: 'SM', name: 'Sofia M.', role: 'Junior, Computer Science', color: '#7c3aed',
-    text: "I went from constantly missing deadlines to having everything under control. The AI actually explains my homework — it's insane.",
-  },
-  {
-    initials: 'JK', name: 'James K.', role: 'Sophomore, Pre-Med', color: '#2563eb',
-    text: "Med school prep is brutal. The grade calculator alone saved my GPA — I knew exactly what I needed on my final.",
-  },
-  {
-    initials: 'AL', name: 'Aisha L.', role: 'Senior, Business', color: '#16a34a',
-    text: "I recommended duee. to my whole study group. It's everything Blackboard should have been but never was.",
-  },
-];
 
 const DIFF_ITEMS = [
   {
@@ -443,35 +429,6 @@ export default function LandingPage() {
       {/* ── Video ── */}
       <VideoPlayer />
 
-      {/* ── Testimonials ── */}
-      <section className="lp-testi-section">
-        <div className="lp-section-inner">
-          <div className="lp-reveal" style={{ textAlign: 'center', marginBottom: 48 }}>
-            <div className="lp-label">Testimonials</div>
-            <h2 className="lp-h2">Students love duee.</h2>
-            <p className="lp-p" style={{ margin: '0 auto' }}>Real students, real results.</p>
-          </div>
-          <div className="lp-testi-grid">
-            {TESTIMONIALS.map((t, i) => (
-              <div className="lp-testi-card lp-reveal" key={i} style={{ transitionDelay: `${i * 0.1}s`, borderTop: `3px solid ${t.color}` }}>
-                <div className="lp-stars">
-                  {[...Array(5)].map((_, si) => (
-                    <svg key={si} width="13" height="13" viewBox="0 0 24 24" fill="#f59e0b"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
-                  ))}
-                </div>
-                <p className="lp-testi-text">&ldquo;{t.text}&rdquo;</p>
-                <div className="lp-testi-author">
-                  <div className="lp-testi-avatar" style={{ background: t.color }}>{t.initials}</div>
-                  <div>
-                    <div style={{ fontWeight: 700, fontSize: 13 }}>{t.name}</div>
-                    <div style={{ fontSize: 12, color: '#64748b' }}>{t.role}</div>
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      </section>
 
       {/* ── Pricing ── */}
       <div id="pricing" className="lp-pricing-section">
