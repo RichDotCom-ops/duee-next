@@ -3,7 +3,12 @@ import './globals.css';
 export const metadata = {
   title: 'duee. — AI-Powered Student Planner',
   description: 'Track classes, assignments, and deadlines with an AI assistant.',
-  icons: { icon: '/favicon.svg', apple: '/icons/apple-touch-icon.png' },
+  icons: {
+    icon: [
+      { url: '/favicon.svg', type: 'image/svg+xml' },
+    ],
+    shortcut: '/favicon.svg',
+  },
 };
 
 export default function RootLayout({ children }) {
