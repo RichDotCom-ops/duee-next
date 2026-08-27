@@ -1,10 +1,15 @@
 // Text models — tried in order, picked dynamically from live free list
 const PREFERRED_TEXT = [
-  'meta-llama/llama-3.3-70b-instruct',
-  'qwen/qwen3-8b',
-  'google/gemma-3-27b-it',
-  'deepseek/deepseek-chat',
+  'nvidia/nemotron-3-ultra-550b-a55b',
+  'minimax/minimax-m3',
+  'nvidia/nemotron-3-super-120b-a12b',
+  'google/gemma-4-31b-it',
+  'google/gemma-4-26b-a4b-it',
+  'openrouter/free',
 ];
+
+// Models that are specialized/bad for general chat — skip them
+const SKIP_MODELS = ['content-safety', 'finance', 'lyria', 'audio', 'clip', 'note-preview', 'inkling', 'laguna', 'lightning', 'code'];
 
 // Vision models — hardcoded because the free-list filter is unreliable for vision
 // Each is tried in order; if all fail we strip the image and answer text-only
@@ -22,14 +27,17 @@ async function getTextModels(apiKey) {
   try {
     const res = await fetch('https://openrouter.ai/api/v1/models', { headers: { 'Authorization': `Bearer ${apiKey}` } });
     const { data } = await res.json();
-    const free = (data || []).filter(m => parseFloat(m.pricing?.prompt ?? 1) === 0).map(m => m.id);
+    const free = (data || [])
+      .filter(m => parseFloat(m.pricing?.prompt ?? 1) === 0)
+      .map(m => m.id)
+      .filter(id => !SKIP_MODELS.some(s => id.includes(s)));
     const matched = PREFERRED_TEXT.map(p => free.find(f => f.startsWith(p))).filter(Boolean);
     const rest    = free.filter(f => !PREFERRED_TEXT.some(p => f.startsWith(p))).sort();
     _textCache = [...new Set([...matched, ...rest])];
     _textCacheAt = now;
     return _textCache;
   } catch {
-    return ['meta-llama/llama-3.3-70b-instruct:free'];
+    return ['nvidia/nemotron-3-ultra-550b-a55b:free', 'minimax/minimax-m3:free', 'openrouter/free'];
   }
 }
 
