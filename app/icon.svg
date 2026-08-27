@@ -8,29 +8,9 @@
       <stop offset="0%" stop-color="#86efac"/>
       <stop offset="100%" stop-color="#16a34a"/>
     </radialGradient>
-    <filter id="glow">
-      <feGaussianBlur in="SourceGraphic" stdDeviation="1" result="blur"/>
-      <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
-    </filter>
   </defs>
-
-  <!-- Background -->
   <rect width="64" height="64" rx="13" fill="url(#bg)"/>
-  <rect width="64" height="64" rx="13" stroke="rgba(255,255,255,0.08)" stroke-width="1" fill="none"/>
-
-  <!-- Letter "d" — centered, fully visible -->
-  <!-- Stem: ascender from top, runs down right side of bowl -->
-  <!-- Bowl: large arc curving left, attaches to stem at top and bottom -->
-  <path
-    d="M 44 9 L 44 52 M 44 21 A 17 17 0 1 0 44 52"
-    stroke="white"
-    stroke-width="9"
-    stroke-linecap="round"
-    fill="none"
-    filter="url(#glow)"
-  />
-
-  <!-- Brand dot "." — bright green -->
+  <path d="M 44 9 L 44 52 M 44 21 A 17 17 0 1 0 44 52" stroke="white" stroke-width="9" stroke-linecap="round" fill="none"/>
   <circle cx="55" cy="55" r="6" fill="url(#dot)"/>
   <circle cx="53.5" cy="53.5" r="2.2" fill="rgba(255,255,255,0.4)"/>
 </svg>

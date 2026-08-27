@@ -138,7 +138,7 @@ function getGreeting(assignments, classes) {
   if (overdue.length) return `${overdue.length} overdue assignment${overdue.length > 1 ? 's' : ''}. Want to tackle them now?`;
   if (dueToday.length) return `${dueToday.length} due today. Need help with any of them?`;
   if (dueSoon.length) return `${dueSoon.length} assignment${dueSoon.length > 1 ? 's' : ''} coming up soon. Want to plan ahead?`;
-  if (!classes.length) return 'Add your classes first — just say "add Chemistry" and I\'ll set it up.';
+  if (!classes.length) return 'Hey! Ask me anything — I can explain concepts, help plan your week, or add assignments for you.';
   if (!pending.length) return 'You\'re all caught up! Ask me anything or plan ahead.';
   return 'Hey! Ask me anything — I can explain concepts, help plan your week, or add assignments.';
 }
