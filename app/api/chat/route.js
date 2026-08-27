@@ -1,45 +1,18 @@
-// Text models — tried in order, picked dynamically from live free list
-const PREFERRED_TEXT = [
-  'nvidia/nemotron-3-ultra-550b-a55b',
-  'minimax/minimax-m3',
-  'nvidia/nemotron-3-super-120b-a12b',
-  'google/gemma-4-31b-it',
-  'google/gemma-4-26b-a4b-it',
-  'openrouter/free',
+// Text models — tried in order until one succeeds
+const TEXT_MODELS = [
+  'nvidia/nemotron-3-ultra-550b-a55b:free',
+  'minimax/minimax-m3:free',
+  'nvidia/nemotron-3-super-120b-a12b:free',
+  'google/gemma-4-31b-it:free',
+  'minimax/minimax-m2.7:free',
 ];
 
-// Models that are specialized/bad for general chat — skip them
-const SKIP_MODELS = ['content-safety', 'finance', 'lyria', 'audio', 'clip', 'note-preview', 'inkling', 'laguna', 'lightning', 'code'];
-
-// Vision models — hardcoded because the free-list filter is unreliable for vision
-// Each is tried in order; if all fail we strip the image and answer text-only
+// Vision models — tried in order; if all fail we strip image and answer text-only
 const VISION_MODELS = [
   'meta-llama/llama-3.2-11b-vision-instruct:free',
   'qwen/qwen2-vl-7b-instruct:free',
   'google/gemma-3-12b-it:free',
 ];
-
-let _textCache = null, _textCacheAt = 0;
-
-async function getTextModels(apiKey) {
-  const now = Date.now();
-  if (_textCache && now - _textCacheAt < 3_600_000) return _textCache;
-  try {
-    const res = await fetch('https://openrouter.ai/api/v1/models', { headers: { 'Authorization': `Bearer ${apiKey}` } });
-    const { data } = await res.json();
-    const free = (data || [])
-      .filter(m => parseFloat(m.pricing?.prompt ?? 1) === 0)
-      .map(m => m.id)
-      .filter(id => !SKIP_MODELS.some(s => id.includes(s)));
-    const matched = PREFERRED_TEXT.map(p => free.find(f => f.startsWith(p))).filter(Boolean);
-    const rest    = free.filter(f => !PREFERRED_TEXT.some(p => f.startsWith(p))).sort();
-    _textCache = [...new Set([...matched, ...rest])];
-    _textCacheAt = now;
-    return _textCache;
-  } catch {
-    return ['nvidia/nemotron-3-ultra-550b-a55b:free', 'minimax/minimax-m3:free', 'openrouter/free'];
-  }
-}
 
 // ── System prompt ─────────────────────────────────────────────────────────────
 function buildSystemPrompt(context, memory) {
@@ -170,7 +143,6 @@ export async function POST(request) {
       memory
     );
 
-    const apiKey = process.env.OPENROUTER_API_KEY;
     let res, raw;
 
     if (hasImage) {
@@ -188,8 +160,7 @@ export async function POST(request) {
             ? { ...m, content: m.content.filter(p => p.type === 'text').map(p => p.text).join(' ') || '(image attached)' }
             : m
         );
-        const textModels = await getTextModels(apiKey);
-        for (const model of textModels) {
+        for (const model of TEXT_MODELS) {
           res = await callModel(model, system, textOnly);
           raw = await res.json();
           if (res.ok && !raw.error) {
@@ -201,8 +172,7 @@ export async function POST(request) {
         }
       }
     } else {
-      const textModels = await getTextModels(apiKey);
-      for (const model of textModels) {
+      for (const model of TEXT_MODELS) {
         res = await callModel(model, system, messages);
         raw = await res.json();
         if (res.ok && !raw.error) break;
