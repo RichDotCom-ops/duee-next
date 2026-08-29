@@ -87,7 +87,14 @@ RULES for actions:
 - Match classId from the class list above
 - Use REMEMBER when you learn something useful: their major, schedule, goals, exam dates, struggles
 - You can use multiple action tags in one reply
-- Never show the raw IDs or action tags in your visible text`;
+- Never show the raw IDs or action tags in your visible text
+
+BULK ASSIGNMENT RULES (when student pastes a list of many assignments):
+- Output ALL assignments as separate [ADD_ASSIGNMENT:...] tags — do not skip any
+- Keep your text response short (e.g. "Adding all X assignments now...")
+- If a due date is missing, use a reasonable date based on context or default to 7 days from today (${new Date(Date.now() + 7*86400000).toISOString().split('T')[0]})
+- If the class is unclear, leave classId as empty string ""
+- Do not stop early — add every single assignment in the list`;
 }
 
 function parseActions(text) {
@@ -113,7 +120,7 @@ function stripTags(text) {
 
 async function callModel(model, system, messages) {
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 8000); // 8s per model max
+  const timeout = setTimeout(() => controller.abort(), 30000); // 30s for bulk operations
   try {
     const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
       method: 'POST',
@@ -125,7 +132,7 @@ async function callModel(model, system, messages) {
       body: JSON.stringify({
         model,
         messages: [{ role: 'system', content: system }, ...messages],
-        max_tokens: 1000,
+        max_tokens: 8000,
         temperature: 0.65,
       }),
     });
