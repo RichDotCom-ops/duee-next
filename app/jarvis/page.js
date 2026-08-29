@@ -3,11 +3,17 @@ import { useState, useRef, useEffect, useCallback } from 'react';
 
 const STOP_WORDS = ['stop', 'stop it', 'shut up', 'quiet', 'enough', 'silence', 'stop talking', 'be quiet'];
 
-// Global debug log — visible on page so no DevTools needed
+// Global debug log
 let _dbgLog = null;
 function dbg(msg) {
   console.log('[Jarvis]', msg);
   if (_dbgLog) _dbgLog(prev => [`${new Date().toLocaleTimeString()}: ${msg}`, ...prev].slice(0, 20));
+}
+
+// Global audio handle so stop command can kill it immediately
+let _audio = null;
+function stopAudio() {
+  if (_audio) { try { _audio.pause(); _audio.src = ''; } catch {} _audio = null; }
 }
 
 function getGreeting() {
@@ -17,134 +23,60 @@ function getGreeting() {
   return 'Good evening Boss. Ready when you are.';
 }
 
-function unlockAudio() {
-  if (typeof window === 'undefined') return;
-  try {
-    const ctx = new (window.AudioContext || window.webkitAudioContext)();
-    ctx.resume().then(() => dbg('AudioContext resumed')).catch(e => dbg('AudioContext err: ' + e));
-  } catch(e) { dbg('AudioContext init err: ' + e); }
-  try {
-    window.speechSynthesis.cancel();
-    const p = new SpeechSynthesisUtterance('.');
-    p.volume = 0; p.rate = 16;
-    p.onstart = () => dbg('primer onstart');
-    p.onend = () => dbg('primer onend');
-    p.onerror = e => dbg('primer onerror: ' + e.error);
-    window.speechSynthesis.speak(p);
-    dbg('primer queued');
-  } catch(e) { dbg('primer err: ' + e); }
-}
-
-// Male voice names to try, in priority order
-const MALE_VOICE_NAMES = [
-  'Google UK English Male',
-  'Microsoft David Desktop',
-  'Microsoft Mark Desktop',
-  'Daniel',
-  'David',
-  'Alex',
-  'Fred',
-  'Microsoft David',
-  'Google US English',
-];
-
-function findMaleVoice() {
-  const voices = window.speechSynthesis.getVoices();
-  const engVoices = voices.filter(v => v.lang.startsWith('en'));
-  dbg(`voices total=${voices.length} en=${engVoices.length}: ${engVoices.map(v => v.name).join(', ')}`);
-
-  // Try exact priority list first
-  for (const name of MALE_VOICE_NAMES) {
-    const v = voices.find(v2 => v2.name.toLowerCase().includes(name.toLowerCase()));
-    if (v) { dbg(`picked voice: ${v.name}`); return v; }
-  }
-  // Fall back to any English voice with "male" in the name
-  const male = engVoices.find(v => v.name.toLowerCase().includes('male'));
-  if (male) { dbg(`picked male voice: ${male.name}`); return male; }
-  // Fall back to any English voice with a typically-male name
-  const named = engVoices.find(v => /\b(david|mark|james|daniel|alex|fred|george|matthew|ryan|paul|tom|john|mike)\b/i.test(v.name));
-  if (named) { dbg(`picked named voice: ${named.name}`); return named; }
-
-  dbg('no male voice found — using browser default');
-  return null;
-}
-
 function cleanText(text) {
   return text
     .replace(/\*\*([^*]+)\*\*/g, '$1').replace(/\*([^*]+)\*/g, '$1')
     .replace(/#{1,3}\s/g, '').replace(/`([^`]+)`/g, '$1')
     .replace(/\n+/g, '. ').replace(/[^\w\s,.'!?$%()-]/g, ' ')
-    .replace(/\s+/g, ' ').trim().slice(0, 400);
+    .replace(/\s+/g, ' ').trim().slice(0, 450);
 }
 
-function speak(text, _, onEnd) {
-  if (typeof window === 'undefined' || !window.speechSynthesis) {
-    dbg('speak: speechSynthesis unavailable');
-    if (onEnd) onEnd(); return;
-  }
-  const synth = window.speechSynthesis;
+// ElevenLabs TTS — bypasses speechSynthesis entirely (fixes Chromebook)
+async function speak(text, secret, onEnd) {
+  stopAudio();
   const clean = cleanText(text);
   if (!clean) { if (onEnd) onEnd(); return; }
 
-  dbg(`speak: "${clean.slice(0, 40)}…"`);
-  dbg(`synth.speaking=${synth.speaking} pending=${synth.pending} paused=${synth.paused}`);
+  dbg(`speak: "${clean.slice(0, 50)}…"`);
 
-  // Attempt order: [maleVoice, null(default)]
-  const maleVoice = findMaleVoice();
-  const voiceOptions = maleVoice ? [maleVoice, null] : [null];
-  let attempt = 0, done = false;
+  try {
+    const res = await fetch('/api/tts', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-admin-secret': secret },
+      body: JSON.stringify({ text: clean }),
+    });
 
-  function trySpeak() {
-    if (done) return;
-    const voice = voiceOptions[Math.min(attempt, voiceOptions.length - 1)];
-    attempt++;
-    dbg(`trySpeak #${attempt} voice=${voice ? voice.name : 'default'}`);
-    synth.cancel();
+    if (!res.ok) {
+      const msg = await res.text();
+      dbg(`TTS API error ${res.status}: ${msg}`);
+      if (onEnd) onEnd();
+      return;
+    }
 
-    setTimeout(() => {
-      if (done) return;
-      synth.resume();
-      const utter = new SpeechSynthesisUtterance(clean);
-      if (voice) utter.voice = voice;
-      utter.pitch = 0.85; utter.rate = 0.95; utter.volume = 1;
-      let started = false;
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const audio = new Audio(url);
+    _audio = audio;
 
-      const alive = setInterval(() => {
-        if (!synth.speaking) { clearInterval(alive); return; }
-        synth.pause(); synth.resume();
-      }, 10000);
+    audio.onended = () => {
+      dbg('audio ended');
+      URL.revokeObjectURL(url);
+      if (_audio === audio) _audio = null;
+      if (onEnd) onEnd();
+    };
+    audio.onerror = (e) => {
+      dbg('audio element error: ' + (e.message || 'unknown'));
+      URL.revokeObjectURL(url);
+      if (_audio === audio) _audio = null;
+      if (onEnd) onEnd();
+    };
 
-      utter.onstart = () => { started = true; dbg(`onstart #${attempt} voice=${voice?.name || 'default'}`); };
-      utter.onend = () => {
-        dbg(`onend #${attempt}`);
-        if (done) return; done = true; clearInterval(alive); if (onEnd) onEnd();
-      };
-      utter.onerror = (e) => {
-        dbg(`onerror #${attempt}: ${e.error}`);
-        clearInterval(alive);
-        if (!done && attempt < voiceOptions.length + 1) { setTimeout(trySpeak, 300); }
-        else if (!done) { done = true; if (onEnd) onEnd(); }
-      };
-
-      synth.speak(utter);
-      dbg(`speak queued (pending=${synth.pending})`);
-
-      // If no onstart in 2s, try next voice option
-      setTimeout(() => {
-        if (!started && !done) {
-          clearInterval(alive);
-          if (attempt < voiceOptions.length + 1) {
-            dbg(`no onstart in 2s — trying fallback`);
-            trySpeak();
-          } else {
-            dbg('no onstart after all attempts — giving up');
-            done = true; if (onEnd) onEnd();
-          }
-        }
-      }, 2000);
-    }, attempt === 1 ? 200 : 150);
+    await audio.play();
+    dbg('audio playing ✓');
+  } catch (e) {
+    dbg('speak error: ' + e.message);
+    if (onEnd) onEnd();
   }
-  trySpeak();
 }
 
 // ── 3D Holographic Orb ────────────────────────────────────────────────────────
@@ -386,11 +318,7 @@ export default function JarvisPage() {
 
   useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [messages]);
 
-  useEffect(() => {
-    if (typeof window === 'undefined') return;
-    window.speechSynthesis.getVoices();
-    window.speechSynthesis.onvoiceschanged = () => window.speechSynthesis.getVoices();
-  }, []);
+  // No speechSynthesis needed — using ElevenLabs via /api/tts
 
   const sendMsg = useCallback(async (text) => {
     const msg = text.trim();
@@ -416,7 +344,7 @@ export default function JarvisPage() {
       const next = [...history, aiMsg];
       setMessages(next); messagesRef.current = next;
       setVoiceState('speaking');
-      speak(reply, null, () => { setVoiceState('listening'); });
+      speak(reply, secretRef.current, () => { setVoiceState('listening'); });
     } catch {
       setVoiceState('listening');
     } finally { setLoading(false); loadingRef.current = false; }
@@ -438,7 +366,7 @@ export default function JarvisPage() {
     const next = [...messagesRef.current, greetMsg];
     setMessages(next); messagesRef.current = next;
     setVoiceState('speaking');
-    speak(getGreeting(), null, () => setVoiceState('listening'));
+    speak(getGreeting(), secretRef.current, () => setVoiceState('listening'));
 
     recog.onresult = (e) => {
       let interim = '', final = '';
@@ -452,7 +380,7 @@ export default function JarvisPage() {
 
       // Stop command — works anytime
       if (STOP_WORDS.some(w => lower === w || lower.startsWith(w + ' ') || lower.endsWith(' ' + w))) {
-        window.speechSynthesis.cancel();
+        stopAudio();
         clearTimeout(sendTimerRef.current);
         finalBufRef.current = '';
         setTranscript('');
@@ -483,7 +411,7 @@ export default function JarvisPage() {
 
   const stopListening = useCallback(() => {
     if (recogRef.current) { try { recogRef.current.stop(); } catch {} recogRef.current = null; }
-    window.speechSynthesis?.cancel();
+    stopAudio();
     clearTimeout(sendTimerRef.current);
     finalBufRef.current = '';
     setVoiceState('idle'); setTranscript('');
@@ -603,7 +531,7 @@ export default function JarvisPage() {
         {/* Mic button */}
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10 }}>
           <button
-            onClick={() => { if (isActive) { stopListening(); } else { unlockAudio(); startListening(); } }}
+            onClick={() => { if (isActive) { stopListening(); } else { startListening(); } }}
             style={{
               width: 76, height: 76, borderRadius: '50%',
               background: isActive ? 'rgba(34,211,238,0.12)' : 'rgba(6,182,212,0.04)',
@@ -628,8 +556,7 @@ export default function JarvisPage() {
             <button
               onClick={() => {
                 dbg('Manual voice test triggered');
-                unlockAudio();
-                setTimeout(() => speak('Hello Boss, voice test successful.', null, () => dbg('test speak done')), 300);
+                speak('Hello Boss, ElevenLabs voice test successful.', secretRef.current, () => dbg('test speak done'));
               }}
               style={{ fontSize: 10, color: '#a78bfa', background: 'rgba(167,139,250,0.08)', border: '1px solid rgba(167,139,250,0.2)', borderRadius: 6, padding: '4px 10px', cursor: 'pointer', fontFamily: 'inherit', letterSpacing: '0.05em' }}>
               Test Voice
