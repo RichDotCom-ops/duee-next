@@ -89,14 +89,15 @@ async function speak(text, secret, onEnd, onError) {
 
     await new Promise((resolve, reject) => {
       _onEndRef = () => { URL.revokeObjectURL(url); resolve(); };
-      // Override error handler to also reject
-      const prevErr = _audio.onerror;
-      _audio.onerror = () => { URL.revokeObjectURL(url); _onEndRef = null; reject(new Error('code=' + _audio.error?.code)); };
-
+      _audio.onerror = () => {
+        URL.revokeObjectURL(url); _onEndRef = null;
+        reject(new Error('audio error code=' + _audio.error?.code));
+      };
+      // Do NOT call _audio.load() — it fires onended on the previous silent play,
+      // which resolves the promise before the audio even starts.
       _audio.src = url;
-      _audio.load();
       _audio.play()
-        .then(() => { dbg('audio.play() resolved ✓'); _audio.onerror = prevErr; })
+        .then(() => dbg('audio.play() resolved ✓'))
         .catch(err => { URL.revokeObjectURL(url); _onEndRef = null; reject(err); });
     });
 
