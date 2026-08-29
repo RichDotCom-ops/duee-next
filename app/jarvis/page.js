@@ -2,6 +2,7 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 
 const WAKE_WORDS = ['wake up jarvis', 'wake up, jarvis', 'hey jarvis', 'jarvis wake up'];
+const STOP_WORDS = ['stop', 'stop it', 'shut up', 'quiet', 'enough', 'silence', 'stop talking', 'be quiet'];
 
 function getGreeting() {
   const h = new Date().getHours();
@@ -214,8 +215,16 @@ export default function JarvisPage() {
         else interim += t;
       }
       const all = (final || interim).trim();
-      const lower = all.toLowerCase();
+      const lower = all.toLowerCase().trim();
       setTranscript(all);
+
+      // Stop command — works anytime
+      if (STOP_WORDS.some(w => lower === w || lower.startsWith(w + ' ') || lower.endsWith(' ' + w))) {
+        window.speechSynthesis.cancel();
+        setVoiceState('listening'); stateRef.current = 'listening';
+        setTranscript('');
+        return;
+      }
 
       // Wake word
       if (stateRef.current === 'listening' && WAKE_WORDS.some(w => lower.includes(w))) {
