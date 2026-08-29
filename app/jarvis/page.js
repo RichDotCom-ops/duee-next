@@ -70,6 +70,9 @@ function speak(text, onStart, onEnd) {
   if (!clean) { if (onEnd) onEnd(); return; }
 
   function doSpeak() {
+    // Force synth out of any bad state
+    synth.resume();
+
     const utter = new SpeechSynthesisUtterance(clean);
     const voice = getBestVoice();
     if (voice) utter.voice = voice;
@@ -77,38 +80,31 @@ function speak(text, onStart, onEnd) {
     utter.rate = 1.0;
     utter.volume = 1.0;
 
-    let started = false;
-    let keepAlive;
+    const keepAlive = setInterval(() => {
+      if (!synth.speaking) { clearInterval(keepAlive); return; }
+      synth.pause(); synth.resume();
+    }, 8000);
 
-    utter.onstart = () => {
-      started = true;
-      if (onStart) onStart();
-      // Keep Chrome alive — it pauses after ~15s idle
-      keepAlive = setInterval(() => {
-        if (!synth.speaking) { clearInterval(keepAlive); return; }
-        synth.pause(); synth.resume();
-      }, 8000);
-    };
     utter.onend = () => { clearInterval(keepAlive); if (onEnd) onEnd(); };
-    utter.onerror = (e) => {
-      clearInterval(keepAlive);
-      console.warn('TTS error:', e.error);
-      if (onEnd) onEnd();
-    };
+    utter.onerror = () => { clearInterval(keepAlive); if (onEnd) onEnd(); };
 
-    synth.resume();
     synth.speak(utter);
 
-    // Chromebook fallback: if nothing started after 2s, retry once
+    // Chromebook: if still not speaking after 1.5s, cancel and retry with no voice preference
     setTimeout(() => {
-      if (!started && !synth.speaking) {
+      if (!synth.speaking) {
+        clearInterval(keepAlive);
         synth.cancel();
-        const u2 = new SpeechSynthesisUtterance(clean);
-        u2.volume = 1; u2.rate = 1; u2.pitch = 0.85;
-        u2.onend = () => { if (onEnd) onEnd(); };
-        synth.speak(u2);
+        setTimeout(() => {
+          synth.resume();
+          const u2 = new SpeechSynthesisUtterance(clean);
+          u2.volume = 1; u2.rate = 1; u2.pitch = 0.85;
+          u2.onend = () => { if (onEnd) onEnd(); };
+          u2.onerror = () => { if (onEnd) onEnd(); };
+          synth.speak(u2);
+        }, 300);
       }
-    }, 2000);
+    }, 1500);
   }
 
   const voices = synth.getVoices();
@@ -260,8 +256,8 @@ export default function JarvisPage() {
       const aiMsg = { role: 'assistant', content: reply, id: Date.now() + 1 };
       const next = [...history, aiMsg];
       setMessages(next); messagesRef.current = next;
-      speak(reply,
-        () => { setVoiceState('speaking'); },
+      setVoiceState('speaking'); // set immediately — don't wait for onstart
+      speak(reply, null,
         () => { setVoiceState('listening'); }
       );
     } catch {
@@ -308,7 +304,8 @@ export default function JarvisPage() {
         const greetMsg = { role: 'assistant', content: greeting, id: Date.now() };
         const next = [...messagesRef.current, greetMsg];
         setMessages(next); messagesRef.current = next;
-        speak(greeting, () => setVoiceState('speaking'), () => setVoiceState('awake'));
+        setVoiceState('speaking');
+        speak(greeting, null, () => setVoiceState('awake'));
         return;
       }
 
