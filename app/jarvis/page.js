@@ -10,29 +10,14 @@ function dbg(msg) {
   if (_dbgLog) _dbgLog(prev => [`${new Date().toLocaleTimeString()}: ${msg}`, ...prev].slice(0, 20));
 }
 
-// AudioContext — created + unlocked on mic button click, reused for all playback
-// This bypasses Chrome's autoplay restriction on Chromebook completely
-let _audioCtx = null;
-let _audioSrc = null;
+let _audio = null;
 
 function stopAudio() {
-  if (_audioSrc) { try { _audioSrc.stop(); } catch {} _audioSrc = null; }
+  if (_audio) { try { _audio.pause(); _audio.src = ''; } catch {} _audio = null; }
 }
 
 function unlockAudioContext() {
-  try {
-    if (!_audioCtx) {
-      _audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-    }
-    // Play a silent buffer to unlock the context during the user gesture
-    const buf = _audioCtx.createBuffer(1, 1, 22050);
-    const src = _audioCtx.createBufferSource();
-    src.buffer = buf;
-    src.connect(_audioCtx.destination);
-    src.start(0);
-    _audioCtx.resume();
-    dbg(`AudioContext unlocked — state: ${_audioCtx.state}`);
-  } catch(e) { dbg('AudioContext unlock err: ' + e); }
+  // no-op — kept so button click handler doesn't break
 }
 
 function getGreeting() {
@@ -50,27 +35,16 @@ function cleanText(text) {
     .replace(/\s+/g, ' ').trim().slice(0, 450);
 }
 
-// ElevenLabs TTS played via AudioContext (not HTML5 Audio)
-// AudioContext is unlocked once on mic button click and stays unlocked — no autoplay blocks
-async function speak(text, secret, onEnd) {
+// speak() — fetches ElevenLabs audio, plays via HTML5 Audio
+// Returns error string if something fails, null on success
+async function speak(text, secret, onEnd, onError) {
   stopAudio();
   const clean = cleanText(text);
   if (!clean) { if (onEnd) onEnd(); return; }
 
   dbg(`speak: "${clean.slice(0, 50)}…"`);
 
-  if (!_audioCtx) {
-    dbg('ERROR: AudioContext not created — mic button was not clicked first');
-    if (onEnd) onEnd(); return;
-  }
-
   try {
-    // Resume in case browser suspended it
-    if (_audioCtx.state === 'suspended') {
-      await _audioCtx.resume();
-      dbg(`AudioContext resumed — state now: ${_audioCtx.state}`);
-    }
-
     const res = await fetch('/api/tts', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'x-admin-secret': secret },
@@ -79,35 +53,35 @@ async function speak(text, secret, onEnd) {
 
     if (!res.ok) {
       const msg = await res.text();
-      dbg(`TTS API error ${res.status}: ${msg}`);
+      dbg(`TTS error ${res.status}: ${msg}`);
+      if (onError) onError(`Voice error ${res.status}: ${msg}`);
       if (onEnd) onEnd(); return;
     }
 
-    const arrayBuffer = await res.arrayBuffer();
-    dbg(`arrayBuffer size: ${arrayBuffer.byteLength} bytes`);
+    const blob = await res.blob();
+    dbg(`blob: ${blob.size}b type=${blob.type}`);
 
-    if (arrayBuffer.byteLength < 100) {
-      dbg('response too small — ElevenLabs returned empty audio');
+    if (blob.size < 100) {
+      dbg('blob too small — empty audio from ElevenLabs');
+      if (onError) onError('ElevenLabs returned empty audio — check API key quota');
       if (onEnd) onEnd(); return;
     }
 
-    // decodeAudioData works on already-unlocked AudioContext regardless of gesture
-    const audioBuffer = await _audioCtx.decodeAudioData(arrayBuffer.slice(0));
-    dbg(`decoded: ${audioBuffer.duration.toFixed(1)}s ${audioBuffer.numberOfChannels}ch`);
+    const url = URL.createObjectURL(blob);
+    const audio = new Audio(url);
+    _audio = audio;
 
-    const source = _audioCtx.createBufferSource();
-    source.buffer = audioBuffer;
-    source.connect(_audioCtx.destination);
-    _audioSrc = source;
-
-    await new Promise(resolve => {
-      source.onended = () => { dbg('playback ended ✓'); _audioSrc = null; resolve(); };
-      source.start(0);
-      dbg('AudioContext playback started ✓');
+    await new Promise((resolve, reject) => {
+      audio.onended  = () => { URL.revokeObjectURL(url); if (_audio===audio) _audio=null; resolve(); };
+      audio.onerror  = () => { URL.revokeObjectURL(url); if (_audio===audio) _audio=null; reject(new Error('audio element error code=' + audio.error?.code)); };
+      audio.play().then(() => dbg('audio.play() ✓')).catch(reject);
     });
 
+    dbg('playback done ✓');
+
   } catch(e) {
-    dbg('speak error: ' + e.message);
+    dbg('speak catch: ' + e.message);
+    if (onError) onError('Playback failed: ' + e.message);
   } finally {
     if (onEnd) onEnd();
   }
@@ -323,6 +297,7 @@ export default function JarvisPage() {
   const [lastWords, setLastWords] = useState('');
   const [debugLog, setDebugLog] = useState([]);
   const [showDebug, setShowDebug] = useState(false);
+  const [ttsError, setTtsError] = useState('');
 
   // Wire global dbg logger into component state
   useEffect(() => { _dbgLog = setDebugLog; return () => { _dbgLog = null; }; }, []);
@@ -383,16 +358,13 @@ export default function JarvisPage() {
       const next = [...history, aiMsg];
       setMessages(next); messagesRef.current = next;
       setVoiceState('speaking'); stateRef.current = 'speaking';
-      // Clear any speech the mic picked up while Jarvis was thinking
       finalBufRef.current = '';
       clearTimeout(sendTimerRef.current);
-      speak(reply, secretRef.current, () => {
-        // Small pause before going back to listening so mic doesn't catch Jarvis's last words
-        setTimeout(() => {
-          setVoiceState('listening'); stateRef.current = 'listening';
-          finalBufRef.current = '';
-        }, 400);
-      });
+      setTtsError('');
+      speak(reply, secretRef.current,
+        () => { setTimeout(() => { setVoiceState('listening'); stateRef.current = 'listening'; finalBufRef.current = ''; }, 400); },
+        (err) => setTtsError(err)
+      );
     } catch {
       setVoiceState('listening'); stateRef.current = 'listening';
     } finally { setLoading(false); loadingRef.current = false; }
@@ -414,7 +386,8 @@ export default function JarvisPage() {
     const next = [...messagesRef.current, greetMsg];
     setMessages(next); messagesRef.current = next;
     setVoiceState('speaking');
-    speak(getGreeting(), secretRef.current, () => setVoiceState('listening'));
+    setTtsError('');
+    speak(getGreeting(), secretRef.current, () => setVoiceState('listening'), (err) => setTtsError(err));
 
     recog.onresult = (e) => {
       let interim = '', final = '';
@@ -574,6 +547,12 @@ export default function JarvisPage() {
             {lastWords && !transcript && voiceState !== 'idle' && (
               <div style={{ fontSize: 12, color: '#1e3a4a', marginTop: 8, maxWidth: 360, textAlign: 'center' }}>"{lastWords}"</div>
             )}
+            {ttsError && (
+              <div style={{ marginTop: 12, padding: '8px 16px', background: 'rgba(248,113,113,0.1)', border: '1px solid rgba(248,113,113,0.35)', borderRadius: 8, maxWidth: 380, textAlign: 'center' }}>
+                <div style={{ fontSize: 10, color: '#f87171', letterSpacing: '0.12em', textTransform: 'uppercase', marginBottom: 3 }}>⚠ Voice Error</div>
+                <div style={{ fontSize: 11, color: '#fca5a5', lineHeight: 1.5 }}>{ttsError}</div>
+              </div>
+            )}
           </div>
         </div>
 
@@ -610,8 +589,8 @@ export default function JarvisPage() {
             <button
               onClick={() => {
                 dbg('Manual voice test triggered');
-                unlockAudioContext();
-                speak('Hello Boss, ElevenLabs voice test successful.', secretRef.current, () => dbg('test speak done'));
+                setTtsError('');
+                speak('Hello Boss, ElevenLabs voice test successful.', secretRef.current, () => dbg('test speak done'), (err) => setTtsError(err));
               }}
               style={{ fontSize: 10, color: '#a78bfa', background: 'rgba(167,139,250,0.08)', border: '1px solid rgba(167,139,250,0.2)', borderRadius: 6, padding: '4px 10px', cursor: 'pointer', fontFamily: 'inherit', letterSpacing: '0.05em' }}>
               Test Voice
