@@ -15,6 +15,8 @@ export default function RootLayout({ children }) {
         <meta name="google-site-verification" content="Id6zU6rPzbgzd6SK4ahATmmU1hVgV29zCaXp7ERXe6k" />
         <meta name="google-site-verification" content="GclvscfAwuw0vatvGskOElo2I6jg3b9PXvFtX0MxHMw" />
         <meta name="theme-color" content="#16a34a" />
+        <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+        <link rel="shortcut icon" href="/favicon.svg" />
       </head>
       <body>{children}</body>
     </html>

@@ -4,13 +4,14 @@
       <stop offset="0%" stop-color="#0a0f1e"/>
       <stop offset="100%" stop-color="#0d1f10"/>
     </linearGradient>
-    <radialGradient id="dot" cx="40%" cy="30%" r="70%">
-      <stop offset="0%" stop-color="#86efac"/>
+    <linearGradient id="green" x1="0" y1="0" x2="1" y2="1" gradientUnits="objectBoundingBox">
+      <stop offset="0%" stop-color="#4ade80"/>
       <stop offset="100%" stop-color="#16a34a"/>
-    </radialGradient>
+    </linearGradient>
   </defs>
-  <rect width="64" height="64" rx="13" fill="url(#bg)"/>
-  <path d="M 44 9 L 44 52 M 44 21 A 17 17 0 1 0 44 52" stroke="white" stroke-width="9" stroke-linecap="round" fill="none"/>
-  <circle cx="55" cy="55" r="6" fill="url(#dot)"/>
-  <circle cx="53.5" cy="53.5" r="2.2" fill="rgba(255,255,255,0.4)"/>
+  <rect width="64" height="64" rx="14" fill="url(#bg)"/>
+  <!-- d shape: vertical stroke + half circle -->
+  <path d="M 38 10 L 38 54 M 38 26 A 14 14 0 1 0 38 54" stroke="white" stroke-width="8" stroke-linecap="round" fill="none"/>
+  <!-- green dot -->
+  <circle cx="52" cy="52" r="6" fill="url(#green)"/>
 </svg>
