@@ -3,6 +3,13 @@ import { useState, useRef, useEffect, useCallback } from 'react';
 
 const STOP_WORDS = ['stop', 'stop it', 'shut up', 'quiet', 'enough', 'silence', 'stop talking', 'be quiet'];
 
+// Global debug log — visible on page so no DevTools needed
+let _dbgLog = null;
+function dbg(msg) {
+  console.log('[Jarvis]', msg);
+  if (_dbgLog) _dbgLog(prev => [`${new Date().toLocaleTimeString()}: ${msg}`, ...prev].slice(0, 20));
+}
+
 function getGreeting() {
   const h = new Date().getHours();
   if (h < 12) return 'Good morning Boss. All systems online, ready when you are.';
@@ -12,13 +19,20 @@ function getGreeting() {
 
 function unlockAudio() {
   if (typeof window === 'undefined') return;
-  try { const ctx = new (window.AudioContext || window.webkitAudioContext)(); ctx.resume(); } catch {}
+  try {
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    ctx.resume().then(() => dbg('AudioContext resumed')).catch(e => dbg('AudioContext err: ' + e));
+  } catch(e) { dbg('AudioContext init err: ' + e); }
   try {
     window.speechSynthesis.cancel();
     const p = new SpeechSynthesisUtterance('.');
     p.volume = 0; p.rate = 16;
+    p.onstart = () => dbg('primer onstart');
+    p.onend = () => dbg('primer onend');
+    p.onerror = e => dbg('primer onerror: ' + e.error);
     window.speechSynthesis.speak(p);
-  } catch {}
+    dbg('primer queued');
+  } catch(e) { dbg('primer err: ' + e); }
 }
 
 function cleanText(text) {
@@ -30,29 +44,62 @@ function cleanText(text) {
 }
 
 function speak(text, _, onEnd) {
-  if (typeof window === 'undefined' || !window.speechSynthesis) { if (onEnd) onEnd(); return; }
+  if (typeof window === 'undefined' || !window.speechSynthesis) {
+    dbg('speak: speechSynthesis unavailable');
+    if (onEnd) onEnd(); return;
+  }
   const synth = window.speechSynthesis;
   const clean = cleanText(text);
   if (!clean) { if (onEnd) onEnd(); return; }
+
+  dbg(`speak: "${clean.slice(0, 40)}…"`);
+  dbg(`voices available: ${synth.getVoices().length}`);
+  dbg(`synth.speaking=${synth.speaking} synth.pending=${synth.pending} synth.paused=${synth.paused}`);
 
   let attempts = 0, done = false;
 
   function trySpeak() {
     if (done) return;
     attempts++;
+    dbg(`trySpeak attempt ${attempts}`);
     synth.cancel();
+
     setTimeout(() => {
       if (done) return;
       synth.resume();
       const utter = new SpeechSynthesisUtterance(clean);
       utter.pitch = 0.85; utter.rate = 0.95; utter.volume = 1;
       let started = false;
-      const alive = setInterval(() => { if (!synth.speaking) { clearInterval(alive); return; } synth.pause(); synth.resume(); }, 10000);
-      utter.onstart = () => { started = true; };
-      utter.onend = () => { if (done) return; done = true; clearInterval(alive); if (onEnd) onEnd(); };
-      utter.onerror = () => { clearInterval(alive); if (!done && attempts < 3) { setTimeout(trySpeak, 300); } else if (!done) { done = true; if (onEnd) onEnd(); } };
+
+      const alive = setInterval(() => {
+        if (!synth.speaking) { clearInterval(alive); return; }
+        synth.pause(); synth.resume();
+      }, 10000);
+
+      utter.onstart = () => { started = true; dbg(`utter onstart (attempt ${attempts})`); };
+      utter.onend = () => {
+        dbg(`utter onend (attempt ${attempts})`);
+        if (done) return; done = true; clearInterval(alive); if (onEnd) onEnd();
+      };
+      utter.onerror = (e) => {
+        dbg(`utter onerror: ${e.error} (attempt ${attempts})`);
+        clearInterval(alive);
+        if (!done && attempts < 3) { setTimeout(trySpeak, 300); }
+        else if (!done) { done = true; if (onEnd) onEnd(); }
+      };
+
       synth.speak(utter);
-      setTimeout(() => { if (!started && !done && attempts < 3) { clearInterval(alive); trySpeak(); } }, 2000);
+      dbg(`synth.speak called — queue len after: ${synth.pending}`);
+
+      setTimeout(() => {
+        if (!started && !done && attempts < 3) {
+          dbg(`no onstart after 2s — retrying (attempt ${attempts})`);
+          clearInterval(alive); trySpeak();
+        } else if (!started && !done) {
+          dbg('no onstart after 3 attempts — giving up');
+          done = true; if (onEnd) onEnd();
+        }
+      }, 2000);
     }, attempts === 1 ? 200 : 100);
   }
   trySpeak();
@@ -266,6 +313,11 @@ export default function JarvisPage() {
   const [voiceState, setVoiceState] = useState('idle');
   const [transcript, setTranscript] = useState('');
   const [lastWords, setLastWords] = useState('');
+  const [debugLog, setDebugLog] = useState([]);
+  const [showDebug, setShowDebug] = useState(false);
+
+  // Wire global dbg logger into component state
+  useEffect(() => { _dbgLog = setDebugLog; return () => { _dbgLog = null; }; }, []);
 
   const bottomRef = useRef(null);
   const secretRef = useRef('');
@@ -381,8 +433,8 @@ export default function JarvisPage() {
       }
     };
 
-    recog.onend = () => { if (recogRef.current) { try { recog.start(); } catch {} } };
-    recog.onerror = (e) => { if (e.error === 'not-allowed') { setVoiceState('idle'); recogRef.current = null; } };
+    recog.onend = () => { dbg('recog onend — restarting'); if (recogRef.current) { try { recog.start(); } catch(e) { dbg('recog restart err: ' + e); } } };
+    recog.onerror = (e) => { dbg('recog onerror: ' + e.error); if (e.error === 'not-allowed') { setVoiceState('idle'); recogRef.current = null; } };
     recog.start();
     setVoiceState('listening');
   }, [sendMsg]);
@@ -529,6 +581,23 @@ export default function JarvisPage() {
           <div style={{ fontSize: 10, color: isActive ? '#22d3ee80' : '#1e3a4a', letterSpacing: '0.15em', textTransform: 'uppercase', transition: 'color .3s' }}>
             {isActive ? 'Tap to stop' : 'Tap to speak'}
           </div>
+          {/* Debug tools */}
+          <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+            <button
+              onClick={() => {
+                dbg('Manual voice test triggered');
+                unlockAudio();
+                setTimeout(() => speak('Hello Boss, voice test successful.', null, () => dbg('test speak done')), 300);
+              }}
+              style={{ fontSize: 10, color: '#a78bfa', background: 'rgba(167,139,250,0.08)', border: '1px solid rgba(167,139,250,0.2)', borderRadius: 6, padding: '4px 10px', cursor: 'pointer', fontFamily: 'inherit', letterSpacing: '0.05em' }}>
+              Test Voice
+            </button>
+            <button
+              onClick={() => setShowDebug(v => !v)}
+              style={{ fontSize: 10, color: '#64748b', background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 6, padding: '4px 10px', cursor: 'pointer', fontFamily: 'inherit', letterSpacing: '0.05em' }}>
+              {showDebug ? 'Hide Log' : 'Debug Log'}
+            </button>
+          </div>
         </div>
       </div>
 
@@ -654,6 +723,30 @@ export default function JarvisPage() {
           ))}
         </div>
       </div>
+
+      {/* Debug Log Panel */}
+      {showDebug && (
+        <div style={{
+          position: 'fixed', bottom: 0, left: 270, right: 270, zIndex: 300,
+          background: 'rgba(2,8,23,0.97)', border: '1px solid rgba(167,139,250,0.3)',
+          borderBottom: 'none', borderRadius: '12px 12px 0 0',
+          padding: '12px 16px', maxHeight: 220, overflow: 'hidden',
+          backdropFilter: 'blur(20px)',
+        }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+            <div style={{ fontSize: 9, letterSpacing: '0.2em', color: '#a78bfa', textTransform: 'uppercase' }}>Debug Console</div>
+            <button onClick={() => setDebugLog([])} style={{ fontSize: 9, color: '#334155', background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'inherit' }}>Clear</button>
+          </div>
+          <div style={{ fontFamily: 'monospace', fontSize: 11, display: 'flex', flexDirection: 'column', gap: 3, overflowY: 'auto', maxHeight: 160 }}>
+            {debugLog.length === 0 && <div style={{ color: '#1e3a4a' }}>No logs yet — tap "Test Voice" to start</div>}
+            {debugLog.map((line, i) => (
+              <div key={i} style={{ color: line.includes('err') || line.includes('fail') || line.includes('no onstart') ? '#f87171' : line.includes('onstart') || line.includes('onend') || line.includes('done') ? '#4ade80' : '#64748b', lineHeight: 1.4 }}>
+                {line}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       <style>{`
         @keyframes wave-0 { from { height: 4px; } to { height: 20px; } }
