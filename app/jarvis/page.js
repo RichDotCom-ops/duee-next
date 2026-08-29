@@ -10,10 +10,25 @@ function dbg(msg) {
   if (_dbgLog) _dbgLog(prev => [`${new Date().toLocaleTimeString()}: ${msg}`, ...prev].slice(0, 20));
 }
 
+// Single Audio element created + unlocked on button click, reused for every response
+// Mobile/Chromebook: new Audio() in async context gets blocked; reusing an
+// element that was created during a user gesture always works
 let _audio = null;
+let _onEndRef = null;
+
+function initAudio() {
+  if (_audio) return;
+  _audio = new Audio();
+  _audio.onended = () => { dbg('audio ended'); if (_onEndRef) { _onEndRef(); _onEndRef = null; } };
+  _audio.onerror = () => { dbg('audio error code=' + _audio.error?.code); if (_onEndRef) { _onEndRef(); _onEndRef = null; } };
+  // Play silence to unlock the element during the user gesture
+  _audio.play().catch(() => {});
+  dbg('Audio element created + unlocked');
+}
 
 function stopAudio() {
-  if (_audio) { try { _audio.pause(); _audio.src = ''; } catch {} _audio = null; }
+  if (_audio) { try { _audio.pause(); } catch {} }
+  _onEndRef = null;
 }
 
 function unlockAudioContext() {
@@ -35,14 +50,18 @@ function cleanText(text) {
     .replace(/\s+/g, ' ').trim().slice(0, 450);
 }
 
-// speak() — fetches ElevenLabs audio, plays via HTML5 Audio
-// Returns error string if something fails, null on success
 async function speak(text, secret, onEnd, onError) {
   stopAudio();
   const clean = cleanText(text);
   if (!clean) { if (onEnd) onEnd(); return; }
 
   dbg(`speak: "${clean.slice(0, 50)}…"`);
+
+  if (!_audio) {
+    dbg('ERROR: Audio element not initialized — initAudio() not called yet');
+    if (onError) onError('Audio not ready. Tap the mic button first.');
+    if (onEnd) onEnd(); return;
+  }
 
   try {
     const res = await fetch('/api/tts', {
@@ -62,25 +81,29 @@ async function speak(text, secret, onEnd, onError) {
     dbg(`blob: ${blob.size}b type=${blob.type}`);
 
     if (blob.size < 100) {
-      dbg('blob too small — empty audio from ElevenLabs');
-      if (onError) onError('ElevenLabs returned empty audio — check API key quota');
+      if (onError) onError('ElevenLabs returned empty audio — check ELEVENLABS_API_KEY in Vercel');
       if (onEnd) onEnd(); return;
     }
 
     const url = URL.createObjectURL(blob);
-    const audio = new Audio(url);
-    _audio = audio;
 
     await new Promise((resolve, reject) => {
-      audio.onended  = () => { URL.revokeObjectURL(url); if (_audio===audio) _audio=null; resolve(); };
-      audio.onerror  = () => { URL.revokeObjectURL(url); if (_audio===audio) _audio=null; reject(new Error('audio element error code=' + audio.error?.code)); };
-      audio.play().then(() => dbg('audio.play() ✓')).catch(reject);
+      _onEndRef = () => { URL.revokeObjectURL(url); resolve(); };
+      // Override error handler to also reject
+      const prevErr = _audio.onerror;
+      _audio.onerror = () => { URL.revokeObjectURL(url); _onEndRef = null; reject(new Error('code=' + _audio.error?.code)); };
+
+      _audio.src = url;
+      _audio.load();
+      _audio.play()
+        .then(() => { dbg('audio.play() resolved ✓'); _audio.onerror = prevErr; })
+        .catch(err => { URL.revokeObjectURL(url); _onEndRef = null; reject(err); });
     });
 
     dbg('playback done ✓');
 
   } catch(e) {
-    dbg('speak catch: ' + e.message);
+    dbg('speak error: ' + e.message);
     if (onError) onError('Playback failed: ' + e.message);
   } finally {
     if (onEnd) onEnd();
@@ -564,7 +587,7 @@ export default function JarvisPage() {
         {/* Mic button */}
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10 }}>
           <button
-            onClick={() => { if (isActive) { stopListening(); } else { unlockAudioContext(); startListening(); } }}
+            onClick={() => { if (isActive) { stopListening(); } else { initAudio(); startListening(); } }}
             style={{
               width: 76, height: 76, borderRadius: '50%',
               background: isActive ? 'rgba(34,211,238,0.12)' : 'rgba(6,182,212,0.04)',
@@ -589,6 +612,7 @@ export default function JarvisPage() {
             <button
               onClick={() => {
                 dbg('Manual voice test triggered');
+                initAudio();
                 setTtsError('');
                 speak('Hello Boss, ElevenLabs voice test successful.', secretRef.current, () => dbg('test speak done'), (err) => setTtsError(err));
               }}
