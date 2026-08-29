@@ -90,9 +90,10 @@ RULES for actions:
 - Never show the raw IDs or action tags in your visible text
 
 BULK ASSIGNMENT RULES (when student pastes a list of many assignments):
+- Add them ALL immediately — do NOT ask for confirmation first
 - Output ALL assignments as separate [ADD_ASSIGNMENT:...] tags — do not skip any
-- Keep your text response short (e.g. "Adding all X assignments now...")
-- If a due date is missing, use a reasonable date based on context or default to 7 days from today (${new Date(Date.now() + 7*86400000).toISOString().split('T')[0]})
+- Keep your text response to one short line (e.g. "Adding all 25 assignments now...")
+- If a due date is missing, default to 7 days from today (${new Date(Date.now() + 7*86400000).toISOString().split('T')[0]})
 - If the class is unclear, leave classId as empty string ""
 - Do not stop early — add every single assignment in the list`;
 }
@@ -150,6 +151,19 @@ export async function POST(request) {
 
     if (!messages?.length) return Response.json({ error: 'No messages provided.' }, { status: 400 });
 
+    // Trim conversation history to avoid context overflow.
+    // Keep the last 10 messages, but always include the last user message.
+    const trimMessages = msgs => {
+      if (msgs.length <= 10) return msgs;
+      // Always keep the last 10, but truncate any single message over 2000 chars
+      return msgs.slice(-10).map(m => {
+        if (typeof m.content === 'string' && m.content.length > 2000) {
+          return { ...m, content: m.content.slice(0, 2000) + '\n...[truncated for context]' };
+        }
+        return m;
+      });
+    };
+
     const system = buildSystemPrompt(
       context || { userName: 'Student', classes: [], assignments: [], date: new Date().toISOString().split('T')[0] },
       memory
@@ -168,11 +182,13 @@ export async function POST(request) {
       return { res: null, raw: null };
     }
 
+    const trimmed = trimMessages(messages);
+
     if (hasImage) {
-      ({ res, raw } = await tryModels(VISION_MODELS, messages));
+      ({ res, raw } = await tryModels(VISION_MODELS, trimmed));
       if (!res) {
         // Strip images, fall back to text models
-        const textOnly = messages.map(m =>
+        const textOnly = trimmed.map(m =>
           Array.isArray(m.content)
             ? { ...m, content: m.content.filter(p => p.type === 'text').map(p => p.text).join(' ') || '(image attached)' }
             : m
@@ -184,7 +200,7 @@ export async function POST(request) {
         }
       }
     } else {
-      ({ res, raw } = await tryModels(TEXT_MODELS, messages));
+      ({ res, raw } = await tryModels(TEXT_MODELS, trimmed));
     }
 
     if (!res?.ok || raw?.error) {
