@@ -10,30 +10,7 @@ function dbg(msg) {
   if (_dbgLog) _dbgLog(prev => [`${new Date().toLocaleTimeString()}: ${msg}`, ...prev].slice(0, 20));
 }
 
-// Single Audio element created + unlocked on button click, reused for every response
-// Mobile/Chromebook: new Audio() in async context gets blocked; reusing an
-// element that was created during a user gesture always works
-let _audio = null;
-let _onEndRef = null;
-
-function initAudio() {
-  if (_audio) return;
-  _audio = new Audio();
-  _audio.onended = () => { dbg('audio ended'); if (_onEndRef) { _onEndRef(); _onEndRef = null; } };
-  _audio.onerror = () => { dbg('audio error code=' + _audio.error?.code); if (_onEndRef) { _onEndRef(); _onEndRef = null; } };
-  // Play silence to unlock the element during the user gesture
-  _audio.play().catch(() => {});
-  dbg('Audio element created + unlocked');
-}
-
-function stopAudio() {
-  if (_audio) { try { _audio.pause(); } catch {} }
-  _onEndRef = null;
-}
-
-function unlockAudioContext() {
-  // no-op — kept so button click handler doesn't break
-}
+// speak() uses a JSX <audio> element passed via ref — always in DOM, unlocked on first user gesture
 
 function getGreeting() {
   const h = new Date().getHours();
@@ -50,18 +27,14 @@ function cleanText(text) {
     .replace(/\s+/g, ' ').trim().slice(0, 450);
 }
 
-async function speak(text, secret, onEnd, onError) {
-  stopAudio();
+// audioEl: audioRef.current — always the same DOM element
+async function speak(audioEl, text, secret, onEnd, onError) {
+  if (!audioEl) { dbg('no audioEl'); if (onEnd) onEnd(); return; }
+  try { audioEl.pause(); } catch {}
+
   const clean = cleanText(text);
   if (!clean) { if (onEnd) onEnd(); return; }
-
-  dbg(`speak: "${clean.slice(0, 50)}…"`);
-
-  if (!_audio) {
-    dbg('ERROR: Audio element not initialized — initAudio() not called yet');
-    if (onError) onError('Audio not ready. Tap the mic button first.');
-    if (onEnd) onEnd(); return;
-  }
+  dbg(`speak: "${clean.slice(0, 60)}…"`);
 
   try {
     const res = await fetch('/api/tts', {
@@ -88,17 +61,14 @@ async function speak(text, secret, onEnd, onError) {
     const url = URL.createObjectURL(blob);
 
     await new Promise((resolve, reject) => {
-      _onEndRef = () => { URL.revokeObjectURL(url); resolve(); };
-      _audio.onerror = () => {
-        URL.revokeObjectURL(url); _onEndRef = null;
-        reject(new Error('audio error code=' + _audio.error?.code));
-      };
-      // Do NOT call _audio.load() — it fires onended on the previous silent play,
-      // which resolves the promise before the audio even starts.
-      _audio.src = url;
-      _audio.play()
-        .then(() => dbg('audio.play() resolved ✓'))
-        .catch(err => { URL.revokeObjectURL(url); _onEndRef = null; reject(err); });
+      const cleanup = () => { URL.revokeObjectURL(url); audioEl.onended = null; audioEl.onerror = null; };
+      audioEl.onended = () => { dbg('audio ended ✓'); cleanup(); resolve(); };
+      audioEl.onerror = () => { dbg('audio error code=' + audioEl.error?.code); cleanup(); reject(new Error('audio error')); };
+      audioEl.src = url;
+      audioEl.load();
+      audioEl.play()
+        .then(() => dbg('audio.play() ✓'))
+        .catch(err => { cleanup(); reject(err); });
     });
 
     dbg('playback done ✓');
@@ -327,6 +297,7 @@ export default function JarvisPage() {
   useEffect(() => { _dbgLog = setDebugLog; return () => { _dbgLog = null; }; }, []);
 
   const bottomRef = useRef(null);
+  const audioRef = useRef(null);
   const secretRef = useRef('');
   const messagesRef = useRef([]);
   const recogRef = useRef(null);
@@ -385,7 +356,7 @@ export default function JarvisPage() {
       finalBufRef.current = '';
       clearTimeout(sendTimerRef.current);
       setTtsError('');
-      speak(reply, secretRef.current,
+      speak(audioRef.current, reply, secretRef.current,
         () => { setTimeout(() => { setVoiceState('listening'); stateRef.current = 'listening'; finalBufRef.current = ''; }, 400); },
         (err) => setTtsError(err)
       );
@@ -405,13 +376,18 @@ export default function JarvisPage() {
     recog.interimResults = true;
     recogRef.current = recog;
 
-    // Greet on first activation
+    // Greet on first activation — state stays 'speaking' until greeting finishes
     const greetMsg = { role: 'assistant', content: getGreeting(), id: Date.now() };
     const next = [...messagesRef.current, greetMsg];
     setMessages(next); messagesRef.current = next;
-    setVoiceState('speaking');
+    setVoiceState('speaking'); stateRef.current = 'speaking';
     setTtsError('');
-    speak(getGreeting(), secretRef.current, () => setVoiceState('listening'), (err) => setTtsError(err));
+    // Unlock audio element during this user-gesture callback, then play greeting
+    if (audioRef.current) { audioRef.current.play().catch(() => {}); }
+    speak(audioRef.current, getGreeting(), secretRef.current,
+      () => { setVoiceState('listening'); stateRef.current = 'listening'; },
+      (err) => { setTtsError(err); setVoiceState('listening'); stateRef.current = 'listening'; }
+    );
 
     recog.onresult = (e) => {
       let interim = '', final = '';
@@ -425,7 +401,7 @@ export default function JarvisPage() {
 
       // Stop command — works anytime
       if (STOP_WORDS.some(w => lower === w || lower.startsWith(w + ' ') || lower.endsWith(' ' + w))) {
-        stopAudio();
+        if (audioRef.current) { try { audioRef.current.pause(); } catch {} }
         clearTimeout(sendTimerRef.current);
         finalBufRef.current = '';
         setTranscript('');
@@ -455,16 +431,17 @@ export default function JarvisPage() {
     };
 
     recog.onend = () => { dbg('recog onend — restarting'); if (recogRef.current) { try { recog.start(); } catch(e) { dbg('recog restart err: ' + e); } } };
-    recog.onerror = (e) => { dbg('recog onerror: ' + e.error); if (e.error === 'not-allowed') { setVoiceState('idle'); recogRef.current = null; } };
+    recog.onerror = (e) => { dbg('recog onerror: ' + e.error); if (e.error === 'not-allowed') { setVoiceState('idle'); stateRef.current = 'idle'; recogRef.current = null; } };
     recog.start();
-    setVoiceState('listening');
+    // Do NOT set 'listening' here — greeting controls state (speaking → listening)
   }, [sendMsg]);
 
   const stopListening = useCallback(() => {
     if (recogRef.current) { try { recogRef.current.stop(); } catch {} recogRef.current = null; }
-    stopAudio();
+    if (audioRef.current) { try { audioRef.current.pause(); } catch {} }
     clearTimeout(sendTimerRef.current);
     finalBufRef.current = '';
+    stateRef.current = 'idle';
     setVoiceState('idle'); setTranscript('');
   }, []);
 
@@ -588,7 +565,7 @@ export default function JarvisPage() {
         {/* Mic button */}
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10 }}>
           <button
-            onClick={() => { if (isActive) { stopListening(); } else { initAudio(); startListening(); } }}
+            onClick={() => { if (isActive) { stopListening(); } else { startListening(); } }}
             style={{
               width: 76, height: 76, borderRadius: '50%',
               background: isActive ? 'rgba(34,211,238,0.12)' : 'rgba(6,182,212,0.04)',
@@ -613,9 +590,9 @@ export default function JarvisPage() {
             <button
               onClick={() => {
                 dbg('Manual voice test triggered');
-                initAudio();
+                if (audioRef.current) { audioRef.current.play().catch(() => {}); }
                 setTtsError('');
-                speak('Hello Boss, ElevenLabs voice test successful.', secretRef.current, () => dbg('test speak done'), (err) => setTtsError(err));
+                speak(audioRef.current, 'Hello Boss, ElevenLabs voice test successful.', secretRef.current, () => dbg('test speak done'), (err) => setTtsError(err));
               }}
               style={{ fontSize: 10, color: '#a78bfa', background: 'rgba(167,139,250,0.08)', border: '1px solid rgba(167,139,250,0.2)', borderRadius: 6, padding: '4px 10px', cursor: 'pointer', fontFamily: 'inherit', letterSpacing: '0.05em' }}>
               Test Voice
@@ -754,6 +731,9 @@ export default function JarvisPage() {
           ))}
         </div>
       </div>
+
+      {/* Hidden audio element — always in DOM, unlocked on first user gesture */}
+      <audio ref={audioRef} style={{ display: 'none' }} preload="none" />
 
       {/* Debug Log Panel */}
       {showDebug && (
