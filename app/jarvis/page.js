@@ -35,6 +35,40 @@ function unlockAudio() {
   } catch(e) { dbg('primer err: ' + e); }
 }
 
+// Male voice names to try, in priority order
+const MALE_VOICE_NAMES = [
+  'Google UK English Male',
+  'Microsoft David Desktop',
+  'Microsoft Mark Desktop',
+  'Daniel',
+  'David',
+  'Alex',
+  'Fred',
+  'Microsoft David',
+  'Google US English',
+];
+
+function findMaleVoice() {
+  const voices = window.speechSynthesis.getVoices();
+  const engVoices = voices.filter(v => v.lang.startsWith('en'));
+  dbg(`voices total=${voices.length} en=${engVoices.length}: ${engVoices.map(v => v.name).join(', ')}`);
+
+  // Try exact priority list first
+  for (const name of MALE_VOICE_NAMES) {
+    const v = voices.find(v2 => v2.name.toLowerCase().includes(name.toLowerCase()));
+    if (v) { dbg(`picked voice: ${v.name}`); return v; }
+  }
+  // Fall back to any English voice with "male" in the name
+  const male = engVoices.find(v => v.name.toLowerCase().includes('male'));
+  if (male) { dbg(`picked male voice: ${male.name}`); return male; }
+  // Fall back to any English voice with a typically-male name
+  const named = engVoices.find(v => /\b(david|mark|james|daniel|alex|fred|george|matthew|ryan|paul|tom|john|mike)\b/i.test(v.name));
+  if (named) { dbg(`picked named voice: ${named.name}`); return named; }
+
+  dbg('no male voice found — using browser default');
+  return null;
+}
+
 function cleanText(text) {
   return text
     .replace(/\*\*([^*]+)\*\*/g, '$1').replace(/\*([^*]+)\*/g, '$1')
@@ -53,21 +87,25 @@ function speak(text, _, onEnd) {
   if (!clean) { if (onEnd) onEnd(); return; }
 
   dbg(`speak: "${clean.slice(0, 40)}…"`);
-  dbg(`voices available: ${synth.getVoices().length}`);
-  dbg(`synth.speaking=${synth.speaking} synth.pending=${synth.pending} synth.paused=${synth.paused}`);
+  dbg(`synth.speaking=${synth.speaking} pending=${synth.pending} paused=${synth.paused}`);
 
-  let attempts = 0, done = false;
+  // Attempt order: [maleVoice, null(default)]
+  const maleVoice = findMaleVoice();
+  const voiceOptions = maleVoice ? [maleVoice, null] : [null];
+  let attempt = 0, done = false;
 
   function trySpeak() {
     if (done) return;
-    attempts++;
-    dbg(`trySpeak attempt ${attempts}`);
+    const voice = voiceOptions[Math.min(attempt, voiceOptions.length - 1)];
+    attempt++;
+    dbg(`trySpeak #${attempt} voice=${voice ? voice.name : 'default'}`);
     synth.cancel();
 
     setTimeout(() => {
       if (done) return;
       synth.resume();
       const utter = new SpeechSynthesisUtterance(clean);
+      if (voice) utter.voice = voice;
       utter.pitch = 0.85; utter.rate = 0.95; utter.volume = 1;
       let started = false;
 
@@ -76,31 +114,35 @@ function speak(text, _, onEnd) {
         synth.pause(); synth.resume();
       }, 10000);
 
-      utter.onstart = () => { started = true; dbg(`utter onstart (attempt ${attempts})`); };
+      utter.onstart = () => { started = true; dbg(`onstart #${attempt} voice=${voice?.name || 'default'}`); };
       utter.onend = () => {
-        dbg(`utter onend (attempt ${attempts})`);
+        dbg(`onend #${attempt}`);
         if (done) return; done = true; clearInterval(alive); if (onEnd) onEnd();
       };
       utter.onerror = (e) => {
-        dbg(`utter onerror: ${e.error} (attempt ${attempts})`);
+        dbg(`onerror #${attempt}: ${e.error}`);
         clearInterval(alive);
-        if (!done && attempts < 3) { setTimeout(trySpeak, 300); }
+        if (!done && attempt < voiceOptions.length + 1) { setTimeout(trySpeak, 300); }
         else if (!done) { done = true; if (onEnd) onEnd(); }
       };
 
       synth.speak(utter);
-      dbg(`synth.speak called — queue len after: ${synth.pending}`);
+      dbg(`speak queued (pending=${synth.pending})`);
 
+      // If no onstart in 2s, try next voice option
       setTimeout(() => {
-        if (!started && !done && attempts < 3) {
-          dbg(`no onstart after 2s — retrying (attempt ${attempts})`);
-          clearInterval(alive); trySpeak();
-        } else if (!started && !done) {
-          dbg('no onstart after 3 attempts — giving up');
-          done = true; if (onEnd) onEnd();
+        if (!started && !done) {
+          clearInterval(alive);
+          if (attempt < voiceOptions.length + 1) {
+            dbg(`no onstart in 2s — trying fallback`);
+            trySpeak();
+          } else {
+            dbg('no onstart after all attempts — giving up');
+            done = true; if (onEnd) onEnd();
+          }
         }
       }, 2000);
-    }, attempts === 1 ? 200 : 100);
+    }, attempt === 1 ? 200 : 150);
   }
   trySpeak();
 }
@@ -659,9 +701,11 @@ export default function JarvisPage() {
                 {[
                   { label: 'Total Users', value: stats.totalUsers, color: '#22d3ee', bar: Math.min(stats.totalUsers / 500, 1) },
                   { label: 'New Today', value: `+${stats.newToday}`, color: '#4ade80', bar: Math.min(stats.newToday / 10, 1) },
-                  { label: 'This Week', value: `+${stats.newLast7}`, color: '#a78bfa', bar: Math.min(stats.newLast7 / 50, 1) },
                   { label: 'Active 7d', value: stats.activeUsers, color: '#fb923c', bar: Math.min(stats.activeUsers / 200, 1) },
-                  ...(stats.mrr !== undefined ? [{ label: 'Est. MRR', value: `$${stats.mrr}`, color: '#f59e0b', bar: Math.min(stats.mrr / 500, 1) }] : []),
+                  { label: 'Retention', value: `${stats.retentionRate}%`, color: '#a78bfa', bar: (stats.retentionRate || 0) / 100 },
+                  { label: 'Conversion', value: `${stats.conversionRate}%`, color: '#f59e0b', bar: (parseFloat(stats.conversionRate) || 0) / 20 },
+                  ...(stats.mrr !== undefined ? [{ label: 'MRR', value: `$${stats.mrr}`, color: '#4ade80', bar: Math.min(stats.mrr / 500, 1) }] : []),
+                  ...(stats.overdueAssignments !== undefined ? [{ label: 'Overdue Tasks', value: stats.overdueAssignments, color: '#f87171', bar: Math.min(stats.overdueAssignments / 100, 1) }] : []),
                 ].map(s => (
                   <div key={s.label}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 5 }}>
@@ -702,7 +746,8 @@ export default function JarvisPage() {
               <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 1, background: 'linear-gradient(90deg, transparent, rgba(245,158,11,0.4), transparent)' }} />
               <div style={{ fontSize: 9, color: '#f59e0b', letterSpacing: '0.2em', textTransform: 'uppercase', opacity: 0.7, marginBottom: 4 }}>Revenue</div>
               <div style={{ fontSize: 22, fontWeight: 900, color: '#f59e0b', textShadow: '0 0 20px rgba(245,158,11,0.4)', letterSpacing: '-0.5px' }}>${stats.mrr}<span style={{ fontSize: 11, fontWeight: 400, opacity: 0.5, letterSpacing: 0 }}>/mo</span></div>
-              <div style={{ fontSize: 10, color: '#78350f', marginTop: 3 }}>{stats.activeSubs} active subscribers</div>
+              <div style={{ fontSize: 10, color: '#78350f', marginTop: 2 }}>{stats.activeSubs} subscribers · ARR ${stats.arr}</div>
+              <div style={{ fontSize: 10, color: '#78350f', marginTop: 1 }}>{stats.conversionRate}% conversion rate</div>
             </div>
           )}
         </div>
