@@ -1,14 +1,14 @@
 // Text models — tried in order until one succeeds
 const TEXT_MODELS = [
-  'llama-3.3-70b-versatile',
-  'llama-3.1-8b-instant',
-  'gemma2-9b-it',
+  'qwen/qwen3.8-27b',
+  'openai/gpt-oss-20b',
+  'groq/compound-mini',
 ];
 
 // Vision models — tried in order; if all fail we strip image and answer text-only
 const VISION_MODELS = [
-  'meta-llama/llama-4-scout-17b-16e-instruct',
-  'meta-llama/llama-4-maverick-17b-128e-instruct',
+  'qwen/qwen3.8-27b',
+  'openai/gpt-oss-20b',
 ];
 
 // ── System prompt ─────────────────────────────────────────────────────────────
