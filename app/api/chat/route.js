@@ -1,16 +1,14 @@
-// Text models — tried in order until one succeeds (verified working)
+// Text models — tried in order until one succeeds
 const TEXT_MODELS = [
-  'minimax/minimax-m3:free',
-  'openrouter/free',
-  'nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free',
-  'nvidia/nemotron-3-super-120b-a12b:free',
+  'llama-3.3-70b-versatile',
+  'llama-3.1-8b-instant',
+  'gemma2-9b-it',
 ];
 
 // Vision models — tried in order; if all fail we strip image and answer text-only
 const VISION_MODELS = [
-  'meta-llama/llama-3.2-11b-vision-instruct:free',
-  'qwen/qwen2-vl-7b-instruct:free',
-  'google/gemma-3-12b-it:free',
+  'meta-llama/llama-4-scout-17b-16e-instruct',
+  'meta-llama/llama-4-maverick-17b-128e-instruct',
 ];
 
 // ── System prompt ─────────────────────────────────────────────────────────────
@@ -117,14 +115,12 @@ async function callModel(model, system, messages) {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 8000); // 8s per model max
   try {
-    const res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+    const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
       method: 'POST',
       signal: controller.signal,
       headers: {
-        'Authorization': `Bearer ${process.env.OPENROUTER_API_KEY}`,
+        'Authorization': `Bearer ${process.env.GROQ_API_KEY}`,
         'Content-Type': 'application/json',
-        'HTTP-Referer': 'https://duee.online',
-        'X-Title': 'Duee Student Planner',
       },
       body: JSON.stringify({
         model,
