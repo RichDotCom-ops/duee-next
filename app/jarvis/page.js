@@ -11,52 +11,25 @@ function getGreeting() {
   return 'Good evening, Boss. Ready when you are. What can I do for you?';
 }
 
-let audioUnlocked = false;
-
+// Called on mic button click (user gesture) — primes the speech pipeline
 function unlockAudio() {
-  if (typeof window === 'undefined' || audioUnlocked) return;
-  // Play a real silent sound via AudioContext to unlock audio on ChromeOS
+  if (typeof window === 'undefined') return;
   try {
     const ctx = new (window.AudioContext || window.webkitAudioContext)();
-    const buf = ctx.createBuffer(1, 1, 22050);
-    const src = ctx.createBufferSource();
-    src.buffer = buf;
-    src.connect(ctx.destination);
-    src.start(0);
     ctx.resume();
   } catch {}
-  // Also prime speechSynthesis
+  // Queue a silent utterance to open the synthesis pipeline during user gesture
   try {
-    const u = new SpeechSynthesisUtterance(' ');
-    u.volume = 0; u.rate = 10;
-    window.speechSynthesis.speak(u);
-    setTimeout(() => window.speechSynthesis.cancel(), 100);
+    window.speechSynthesis.cancel();
+    const primer = new SpeechSynthesisUtterance('.');
+    primer.volume = 0;
+    primer.rate = 16;
+    window.speechSynthesis.speak(primer);
   } catch {}
-  audioUnlocked = true;
 }
 
-function getBestVoice() {
-  const voices = window.speechSynthesis.getVoices();
-  if (!voices.length) return null;
-  return (
-    voices.find(v => v.name === 'Google UK English Male') ||
-    voices.find(v => v.name.includes('Microsoft David')) ||
-    voices.find(v => v.name.includes('Microsoft Mark')) ||
-    voices.find(v => v.name.includes('Google US English') && v.name.toLowerCase().includes('male')) ||
-    voices.find(v => v.lang === 'en-GB') ||
-    voices.find(v => v.lang === 'en-US') ||
-    voices.find(v => v.lang.startsWith('en')) ||
-    voices[0]
-  );
-}
-
-function speak(text, onStart, onEnd) {
-  if (typeof window === 'undefined' || !window.speechSynthesis) { if (onEnd) onEnd(); return; }
-
-  const synth = window.speechSynthesis;
-  synth.cancel();
-
-  const clean = text
+function cleanText(text) {
+  return text
     .replace(/\*\*([^*]+)\*\*/g, '$1')
     .replace(/\*([^*]+)\*/g, '$1')
     .replace(/#{1,3}\s/g, '')
@@ -65,55 +38,64 @@ function speak(text, onStart, onEnd) {
     .replace(/[^\w\s,.'!?$%()-]/g, ' ')
     .replace(/\s+/g, ' ')
     .trim()
-    .slice(0, 450);
+    .slice(0, 400);
+}
 
+function speak(text, _, onEnd) {
+  if (typeof window === 'undefined' || !window.speechSynthesis) { if (onEnd) onEnd(); return; }
+  const synth = window.speechSynthesis;
+  const clean = cleanText(text);
   if (!clean) { if (onEnd) onEnd(); return; }
 
-  function doSpeak() {
-    // Force synth out of any bad state
-    synth.resume();
+  let attempts = 0;
+  let done = false;
+  const MAX = 3;
 
-    const utter = new SpeechSynthesisUtterance(clean);
-    const voice = getBestVoice();
-    if (voice) utter.voice = voice;
-    utter.pitch = 0.85;
-    utter.rate = 1.0;
-    utter.volume = 1.0;
+  function trySpeak() {
+    if (done) return;
+    attempts++;
+    synth.cancel();
 
-    const keepAlive = setInterval(() => {
-      if (!synth.speaking) { clearInterval(keepAlive); return; }
-      synth.pause(); synth.resume();
-    }, 8000);
-
-    utter.onend = () => { clearInterval(keepAlive); if (onEnd) onEnd(); };
-    utter.onerror = () => { clearInterval(keepAlive); if (onEnd) onEnd(); };
-
-    synth.speak(utter);
-
-    // Chromebook: if still not speaking after 1.5s, cancel and retry with no voice preference
     setTimeout(() => {
-      if (!synth.speaking) {
-        clearInterval(keepAlive);
-        synth.cancel();
-        setTimeout(() => {
-          synth.resume();
-          const u2 = new SpeechSynthesisUtterance(clean);
-          u2.volume = 1; u2.rate = 1; u2.pitch = 0.85;
-          u2.onend = () => { if (onEnd) onEnd(); };
-          u2.onerror = () => { if (onEnd) onEnd(); };
-          synth.speak(u2);
-        }, 300);
-      }
-    }, 1500);
+      if (done) return;
+      synth.resume();
+
+      const utter = new SpeechSynthesisUtterance(clean);
+      // DO NOT set voice — let browser pick default (most reliable on ChromeOS)
+      utter.pitch = 0.85;
+      utter.rate = 0.95;
+      utter.volume = 1;
+
+      let started = false;
+      const alive = setInterval(() => {
+        if (!synth.speaking) { clearInterval(alive); return; }
+        synth.pause(); synth.resume();
+      }, 10000);
+
+      utter.onstart = () => { started = true; };
+      utter.onend = () => {
+        if (done) return; done = true;
+        clearInterval(alive); if (onEnd) onEnd();
+      };
+      utter.onerror = () => {
+        clearInterval(alive);
+        if (!done && attempts < MAX) { setTimeout(trySpeak, 300); }
+        else if (!done) { done = true; if (onEnd) onEnd(); }
+      };
+
+      synth.speak(utter);
+
+      // Chromebook: if speech hasn't started in 2s, retry
+      setTimeout(() => {
+        if (!started && !done && attempts < MAX) {
+          clearInterval(alive);
+          trySpeak();
+        }
+      }, 2000);
+    }, attempts === 1 ? 200 : 100);
   }
 
-  const voices = synth.getVoices();
-  if (!voices.length) {
-    synth.onvoiceschanged = () => { synth.onvoiceschanged = null; setTimeout(doSpeak, 100); };
-    setTimeout(doSpeak, 800); // hard fallback
-  } else {
-    setTimeout(doSpeak, 100);
-  }
+  trySpeak();
 }
 
 // Waveform bars component
