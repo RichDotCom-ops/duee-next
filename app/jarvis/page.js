@@ -11,8 +11,17 @@ function getGreeting() {
   return 'Good evening, Boss. Ready when you are. What can I do for you?';
 }
 
-function speak(text, onStart, onEnd) {
+// Unlock audio context — must be called from a real user click
+function unlockAudio() {
   if (typeof window === 'undefined') return;
+  const u = new SpeechSynthesisUtterance('');
+  u.volume = 0;
+  window.speechSynthesis.speak(u);
+  window.speechSynthesis.cancel();
+}
+
+function speak(text, onStart, onEnd) {
+  if (typeof window === 'undefined' || !window.speechSynthesis) return;
   window.speechSynthesis.cancel();
 
   const clean = text
@@ -21,30 +30,52 @@ function speak(text, onStart, onEnd) {
     .replace(/#{1,3}\s/g, '')
     .replace(/`([^`]+)`/g, '$1')
     .replace(/\n+/g, '. ')
-    .slice(0, 600);
+    .replace(/[^\w\s,.'!?()-]/g, '')
+    .trim()
+    .slice(0, 500);
 
-  const utter = new SpeechSynthesisUtterance(clean);
+  if (!clean) { if (onEnd) onEnd(); return; }
 
-  // Pick best male voice
-  const voices = window.speechSynthesis.getVoices();
-  const preferred = [
-    voices.find(v => v.name === 'Google UK English Male'),
-    voices.find(v => v.name.includes('Microsoft David')),
-    voices.find(v => v.name.includes('Microsoft Mark')),
-    voices.find(v => v.lang === 'en-GB'),
-    voices.find(v => v.lang.startsWith('en')),
-  ].find(Boolean);
+  function doSpeak() {
+    const utter = new SpeechSynthesisUtterance(clean);
+    const voices = window.speechSynthesis.getVoices();
+    const preferred = [
+      voices.find(v => v.name === 'Google UK English Male'),
+      voices.find(v => v.name.includes('Microsoft David')),
+      voices.find(v => v.name.includes('Microsoft Mark')),
+      voices.find(v => v.lang === 'en-GB' && !v.name.toLowerCase().includes('female')),
+      voices.find(v => v.lang.startsWith('en-')),
+    ].find(Boolean);
 
-  if (preferred) utter.voice = preferred;
-  utter.pitch = 0.8;
-  utter.rate = 1.0;
-  utter.volume = 1;
-  utter.onstart = onStart || null;
-  utter.onend = onEnd || null;
-  utter.onerror = onEnd || null;
+    if (preferred) utter.voice = preferred;
+    utter.pitch = 0.82;
+    utter.rate = 1.0;
+    utter.volume = 1.0;
+    utter.onstart = () => { if (onStart) onStart(); };
+    utter.onend = () => { if (onEnd) onEnd(); };
+    utter.onerror = (e) => { console.warn('Speech error:', e.error); if (onEnd) onEnd(); };
 
-  // Small delay fixes Chrome bug where speech doesn't start after cancel
-  setTimeout(() => window.speechSynthesis.speak(utter), 100);
+    // Resume in case Chrome paused it, then speak
+    window.speechSynthesis.resume();
+    window.speechSynthesis.speak(utter);
+
+    // Chrome bug: speechSynthesis stops after ~15s of page idle — keep it alive
+    const keepAlive = setInterval(() => {
+      if (!window.speechSynthesis.speaking) { clearInterval(keepAlive); return; }
+      window.speechSynthesis.pause();
+      window.speechSynthesis.resume();
+    }, 10000);
+    utter.onend = () => { clearInterval(keepAlive); if (onEnd) onEnd(); };
+    utter.onerror = () => { clearInterval(keepAlive); if (onEnd) onEnd(); };
+  }
+
+  // Wait for voices to load if empty
+  if (window.speechSynthesis.getVoices().length === 0) {
+    window.speechSynthesis.onvoiceschanged = () => { doSpeak(); };
+    setTimeout(doSpeak, 500); // fallback
+  } else {
+    setTimeout(doSpeak, 150);
+  }
 }
 
 // Waveform bars component
@@ -368,7 +399,7 @@ export default function JarvisPage() {
 
         {/* Mic button */}
         <button
-          onClick={isActive ? stopListening : startListening}
+          onClick={() => { if (isActive) { stopListening(); } else { unlockAudio(); startListening(); } }}
           style={{
             width: 72, height: 72, borderRadius: '50%',
             background: isActive ? 'rgba(34,211,238,0.15)' : 'rgba(6,182,212,0.05)',
