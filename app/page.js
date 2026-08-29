@@ -166,7 +166,7 @@ export default function LandingPage() {
       entries => entries.forEach(e => { if (e.isIntersecting) { e.target.classList.add('lp-visible'); obs.unobserve(e.target); } }),
       { threshold: 0.08, rootMargin: '0px 0px -40px 0px' }
     );
-    document.querySelectorAll('.lp-reveal').forEach(el => obs.observe(el));
+    document.querySelectorAll('.lp-reveal, .lp-reveal-left, .lp-reveal-right, .lp-reveal-scale, .lp-reveal-pop').forEach(el => obs.observe(el));
     return () => obs.disconnect();
   }, []);
 
@@ -342,7 +342,7 @@ export default function LandingPage() {
 
           <div className="lp-diff-grid">
             {DIFF_ITEMS.map((d, i) => (
-              <div className="lp-diff-card lp-reveal" key={i} style={{ transitionDelay: `${i * 0.12}s` }}>
+              <div className={`lp-diff-card ${i % 2 === 0 ? 'lp-reveal-left' : i % 3 === 1 ? 'lp-reveal' : 'lp-reveal-right'}`} key={i} style={{ transitionDelay: `${i * 0.12}s` }}>
                 <div className="lp-diff-icon" style={{ background: d.bg, color: d.color }}>{d.icon}</div>
                 <h3 className="lp-diff-title">{d.title}</h3>
                 <p className="lp-diff-desc">{d.desc}</p>
@@ -351,7 +351,7 @@ export default function LandingPage() {
           </div>
 
           {/* Quick comparison table */}
-          <div className="lp-compare-wrap lp-reveal" style={{ transitionDelay: '0.2s' }}>
+          <div className="lp-compare-wrap lp-reveal-scale" style={{ transitionDelay: '0.2s' }}>
             <table className="lp-compare">
               <thead>
                 <tr>
@@ -392,7 +392,7 @@ export default function LandingPage() {
 
           <div className="lp-features-grid">
             {FEATURES.map((f, i) => (
-              <div className="lp-feat-card lp-reveal" key={i} style={{ transitionDelay: `${(i % 3) * 0.1}s`, '--glow': f.glow }}>
+              <div className="lp-feat-card lp-reveal-pop" key={i} style={{ transitionDelay: `${(i % 3) * 0.12}s`, '--glow': f.glow }}>
                 <div className="lp-feat-icon" style={{ background: f.bg, color: f.color }}>{f.svg}</div>
                 <h3 className="lp-feat-title">{f.title}</h3>
                 <p className="lp-feat-desc">{f.desc}</p>
@@ -419,7 +419,7 @@ export default function LandingPage() {
               { n: '3', title: 'Drop in assignments', desc: 'Type them or say "Add Calculus homework due Friday" — done.' },
               { n: '✓', title: 'Never fall behind', desc: 'AI check-ins, reminders, and a dashboard that keeps you winning.', done: true },
             ].map((s, i) => (
-              <div className="lp-step lp-reveal" key={i} style={{ transitionDelay: `${i * 0.12}s` }}>
+              <div className="lp-step lp-reveal-pop" key={i} style={{ transitionDelay: `${i * 0.15}s` }}>
                 <div className={`lp-step-num${s.done ? ' done' : ''}`}>{s.n}</div>
                 <h3 className="lp-step-title" style={s.done ? { color: '#16a34a' } : {}}>{s.title}</h3>
                 <p className="lp-step-desc">{s.desc}</p>

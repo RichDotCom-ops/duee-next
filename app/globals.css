@@ -599,12 +599,48 @@ select.form-control {
 /* ── Scroll reveal ── */
 .lp-reveal {
   opacity: 0;
-  transform: translateY(28px);
-  transition: opacity 0.65s cubic-bezier(.22,1,.36,1), transform 0.65s cubic-bezier(.22,1,.36,1);
+  transform: translateY(36px);
+  transition: opacity 0.7s cubic-bezier(.22,1,.36,1), transform 0.7s cubic-bezier(.22,1,.36,1);
 }
 .lp-reveal.lp-visible {
   opacity: 1;
   transform: translateY(0);
+}
+.lp-reveal-left {
+  opacity: 0;
+  transform: translateX(-48px);
+  transition: opacity 0.7s cubic-bezier(.22,1,.36,1), transform 0.7s cubic-bezier(.22,1,.36,1);
+}
+.lp-reveal-left.lp-visible {
+  opacity: 1;
+  transform: translateX(0);
+}
+.lp-reveal-right {
+  opacity: 0;
+  transform: translateX(48px);
+  transition: opacity 0.7s cubic-bezier(.22,1,.36,1), transform 0.7s cubic-bezier(.22,1,.36,1);
+}
+.lp-reveal-right.lp-visible {
+  opacity: 1;
+  transform: translateX(0);
+}
+.lp-reveal-scale {
+  opacity: 0;
+  transform: scale(0.88);
+  transition: opacity 0.6s cubic-bezier(.22,1,.36,1), transform 0.6s cubic-bezier(.22,1,.36,1);
+}
+.lp-reveal-scale.lp-visible {
+  opacity: 1;
+  transform: scale(1);
+}
+.lp-reveal-pop {
+  opacity: 0;
+  transform: translateY(20px) scale(0.95);
+  transition: opacity 0.55s cubic-bezier(.34,1.56,.64,1), transform 0.55s cubic-bezier(.34,1.56,.64,1);
+}
+.lp-reveal-pop.lp-visible {
+  opacity: 1;
+  transform: translateY(0) scale(1);
 }
 
 /* ── Nav ── */
