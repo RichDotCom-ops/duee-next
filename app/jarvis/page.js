@@ -10,27 +10,28 @@ function dbg(msg) {
   if (_dbgLog) _dbgLog(prev => [`${new Date().toLocaleTimeString()}: ${msg}`, ...prev].slice(0, 20));
 }
 
-// Global audio handle so stop command can kill it immediately
-let _audio = null;
+// AudioContext — created + unlocked on mic button click, reused for all playback
+// This bypasses Chrome's autoplay restriction on Chromebook completely
 let _audioCtx = null;
+let _audioSrc = null;
 
 function stopAudio() {
-  if (_audio) { try { _audio.pause(); _audio.src = ''; } catch {} _audio = null; }
+  if (_audioSrc) { try { _audioSrc.stop(); } catch {} _audioSrc = null; }
 }
 
-// Must be called during a direct user gesture (button click)
-// Unlocks HTML5 Audio autoplay on Chromebook/Chrome
 function unlockAudioContext() {
   try {
-    if (_audioCtx) { _audioCtx.resume(); return; }
-    _audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    if (!_audioCtx) {
+      _audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    }
+    // Play a silent buffer to unlock the context during the user gesture
     const buf = _audioCtx.createBuffer(1, 1, 22050);
     const src = _audioCtx.createBufferSource();
     src.buffer = buf;
     src.connect(_audioCtx.destination);
     src.start(0);
     _audioCtx.resume();
-    dbg('AudioContext unlocked');
+    dbg(`AudioContext unlocked — state: ${_audioCtx.state}`);
   } catch(e) { dbg('AudioContext unlock err: ' + e); }
 }
 
@@ -49,7 +50,8 @@ function cleanText(text) {
     .replace(/\s+/g, ' ').trim().slice(0, 450);
 }
 
-// ElevenLabs TTS — bypasses speechSynthesis entirely (fixes Chromebook)
+// ElevenLabs TTS played via AudioContext (not HTML5 Audio)
+// AudioContext is unlocked once on mic button click and stays unlocked — no autoplay blocks
 async function speak(text, secret, onEnd) {
   stopAudio();
   const clean = cleanText(text);
@@ -57,7 +59,18 @@ async function speak(text, secret, onEnd) {
 
   dbg(`speak: "${clean.slice(0, 50)}…"`);
 
+  if (!_audioCtx) {
+    dbg('ERROR: AudioContext not created — mic button was not clicked first');
+    if (onEnd) onEnd(); return;
+  }
+
   try {
+    // Resume in case browser suspended it
+    if (_audioCtx.state === 'suspended') {
+      await _audioCtx.resume();
+      dbg(`AudioContext resumed — state now: ${_audioCtx.state}`);
+    }
+
     const res = await fetch('/api/tts', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'x-admin-secret': secret },
@@ -67,54 +80,33 @@ async function speak(text, secret, onEnd) {
     if (!res.ok) {
       const msg = await res.text();
       dbg(`TTS API error ${res.status}: ${msg}`);
-      // Don't immediately call onEnd — leave in speaking state so user sees the failure
-      // onEnd stays pending; the user must see the error in debug log
-      if (onEnd) onEnd();
-      return;
+      if (onEnd) onEnd(); return;
     }
 
-    const blob = await res.blob();
-    dbg(`blob size: ${blob.size} bytes type: ${blob.type}`);
+    const arrayBuffer = await res.arrayBuffer();
+    dbg(`arrayBuffer size: ${arrayBuffer.byteLength} bytes`);
 
-    if (blob.size < 100) {
-      dbg('blob too small — likely empty response');
-      if (onEnd) onEnd();
-      return;
+    if (arrayBuffer.byteLength < 100) {
+      dbg('response too small — ElevenLabs returned empty audio');
+      if (onEnd) onEnd(); return;
     }
 
-    const url = URL.createObjectURL(blob);
-    const audio = new Audio(url);
-    _audio = audio;
+    // decodeAudioData works on already-unlocked AudioContext regardless of gesture
+    const audioBuffer = await _audioCtx.decodeAudioData(arrayBuffer.slice(0));
+    dbg(`decoded: ${audioBuffer.duration.toFixed(1)}s ${audioBuffer.numberOfChannels}ch`);
 
-    // Resume AudioContext in case it was suspended
-    if (_audioCtx && _audioCtx.state === 'suspended') {
-      _audioCtx.resume().catch(() => {});
-    }
+    const source = _audioCtx.createBufferSource();
+    source.buffer = audioBuffer;
+    source.connect(_audioCtx.destination);
+    _audioSrc = source;
 
-    await new Promise((resolve, reject) => {
-      audio.oncanplaythrough = () => {
-        dbg('audio canplaythrough');
-        audio.play()
-          .then(() => { dbg('audio playing ✓'); })
-          .catch(err => { dbg('audio.play() rejected: ' + err.message); reject(err); });
-      };
-      audio.onended = () => {
-        dbg('audio ended ✓');
-        URL.revokeObjectURL(url);
-        if (_audio === audio) _audio = null;
-        resolve();
-      };
-      audio.onerror = (e) => {
-        const code = audio.error?.code;
-        dbg(`audio element error code=${code}`);
-        URL.revokeObjectURL(url);
-        if (_audio === audio) _audio = null;
-        reject(new Error('audio error ' + code));
-      };
-      audio.load();
+    await new Promise(resolve => {
+      source.onended = () => { dbg('playback ended ✓'); _audioSrc = null; resolve(); };
+      source.start(0);
+      dbg('AudioContext playback started ✓');
     });
 
-  } catch (e) {
+  } catch(e) {
     dbg('speak error: ' + e.message);
   } finally {
     if (onEnd) onEnd();
