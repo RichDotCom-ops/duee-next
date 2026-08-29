@@ -419,62 +419,116 @@ export default function JarvisPage() {
         </button>
       </div>
 
-      {/* ── RIGHT PANEL: live stats ── */}
-      <div style={{ width: 240, flexShrink: 0, borderLeft: '1px solid rgba(6,182,212,0.1)', background: 'rgba(2,8,23,0.7)', backdropFilter: 'blur(8px)', display: 'flex', flexDirection: 'column', zIndex: 2, padding: '18px 16px', gap: 20 }}>
-        <div style={{ fontSize: 10, letterSpacing: '0.2em', color: '#22d3ee', textTransform: 'uppercase', opacity: 0.6 }}>Live Stats</div>
+      {/* ── RIGHT PANEL: holographic ── */}
+      <div style={{ width: 260, flexShrink: 0, borderLeft: '1px solid rgba(6,182,212,0.12)', background: 'rgba(2,8,23,0.85)', backdropFilter: 'blur(16px)', display: 'flex', flexDirection: 'column', zIndex: 2, overflow: 'hidden', position: 'relative' }}>
 
-        {stats ? (
-          <>
-            {[
-              { label: 'Total Users', value: stats.totalUsers, color: '#22d3ee', bar: Math.min(stats.totalUsers / 1000, 1) },
-              { label: 'New Today', value: `+${stats.newToday}`, color: '#4ade80', bar: Math.min(stats.newToday / 20, 1) },
-              { label: 'This Week', value: `+${stats.newLast7}`, color: '#a78bfa', bar: Math.min(stats.newLast7 / 100, 1) },
-              { label: 'Active (7d)', value: stats.activeUsers, color: '#fb923c', bar: Math.min(stats.activeUsers / 500, 1) },
-            ].map(s => (
-              <div key={s.label}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
-                  <div style={{ fontSize: 11, color: '#334155' }}>{s.label}</div>
-                  <div style={{ fontSize: 14, fontWeight: 800, color: s.color }}>{s.value}</div>
-                </div>
-                <div style={{ height: 3, background: '#0e1a2a', borderRadius: 99 }}>
-                  <div style={{ height: '100%', width: `${(s.bar || 0.02) * 100}%`, background: s.color, borderRadius: 99, transition: 'width 1s ease', boxShadow: `0 0 6px ${s.color}88` }} />
-                </div>
-              </div>
-            ))}
+        {/* Holographic glow top-right */}
+        <div style={{ position: 'absolute', top: -60, right: -60, width: 200, height: 200, borderRadius: '50%', background: 'radial-gradient(circle, rgba(6,182,212,0.12) 0%, transparent 70%)', pointerEvents: 'none' }} />
+        <div style={{ position: 'absolute', bottom: 60, right: -40, width: 150, height: 150, borderRadius: '50%', background: 'radial-gradient(circle, rgba(74,222,128,0.07) 0%, transparent 70%)', pointerEvents: 'none' }} />
 
-            {/* Mini bar chart — signups */}
-            <div style={{ marginTop: 8 }}>
-              <div style={{ fontSize: 10, color: '#1e3a4a', letterSpacing: '0.1em', textTransform: 'uppercase', marginBottom: 10 }}>Recent Signups</div>
-              <div style={{ fontSize: 11, color: '#334155', display: 'flex', flexDirection: 'column', gap: 4 }}>
-                {(stats.recentSignups || []).slice(0, 4).map((e, i) => (
-                  <div key={i} style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: '#0e4a5a' }}>
-                    <span style={{ color: '#22d3ee', marginRight: 6 }}>›</span>{e}
+        {/* duee. logo + branding */}
+        <div style={{ padding: '22px 20px 16px', borderBottom: '1px solid rgba(6,182,212,0.08)', position: 'relative' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 6 }}>
+            {/* Logo mark */}
+            <div style={{ width: 36, height: 36, borderRadius: 9, background: 'linear-gradient(135deg,#0a0f1e,#0d1f10)', border: '1px solid rgba(74,222,128,0.3)', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 0 12px rgba(74,222,128,0.15)' }}>
+              <svg viewBox="0 0 64 64" width="22" height="22" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M 38 10 L 38 54 M 38 26 A 14 14 0 1 0 38 54" stroke="white" strokeWidth="8" strokeLinecap="round"/>
+                <circle cx="52" cy="52" r="6" fill="url(#gp)"/>
+                <defs><linearGradient id="gp" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stopColor="#4ade80"/><stop offset="100%" stopColor="#16a34a"/></linearGradient></defs>
+              </svg>
+            </div>
+            <div>
+              <div style={{ fontSize: 18, fontWeight: 900, letterSpacing: '-0.5px', color: 'white', lineHeight: 1 }}>duee<span style={{ color: '#4ade80' }}>.</span></div>
+              <div style={{ fontSize: 9, color: '#1e3a4a', letterSpacing: '0.2em', textTransform: 'uppercase', marginTop: 2 }}>Intelligence Core</div>
+            </div>
+          </div>
+          {/* Scan line */}
+          <div style={{ height: 1, background: 'linear-gradient(90deg, transparent, rgba(6,182,212,0.4), transparent)', marginTop: 4 }} />
+        </div>
+
+        <div style={{ flex: 1, overflowY: 'auto', padding: '16px 20px', display: 'flex', flexDirection: 'column', gap: 18 }}>
+
+          {/* System status — holographic cards */}
+          <div>
+            <div style={{ fontSize: 9, letterSpacing: '0.25em', color: '#22d3ee', textTransform: 'uppercase', opacity: 0.5, marginBottom: 10 }}>System Status</div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+              {[
+                { label: 'Wake Word Engine', active: voiceState !== 'idle', color: '#22d3ee' },
+                { label: 'Microphone', active: voiceState === 'listening' || voiceState === 'awake', color: '#22d3ee' },
+                { label: 'Neural Processing', active: voiceState === 'thinking', color: '#a78bfa' },
+                { label: 'Voice Output', active: voiceState === 'speaking', color: '#4ade80' },
+              ].map(s => (
+                <div key={s.label} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '7px 10px', background: s.active ? `${s.color}0d` : 'rgba(255,255,255,0.02)', border: `1px solid ${s.active ? s.color + '30' : 'rgba(255,255,255,0.04)'}`, borderRadius: 8, transition: 'all .4s' }}>
+                  <div style={{ fontSize: 11, color: s.active ? '#94a3b8' : '#1e3a4a', transition: 'color .4s' }}>{s.label}</div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                    <div style={{ fontSize: 9, color: s.active ? s.color : '#1e293b', letterSpacing: '0.1em', transition: 'color .4s' }}>{s.active ? 'ON' : 'OFF'}</div>
+                    <div style={{ width: 5, height: 5, borderRadius: '50%', background: s.active ? s.color : '#0f1f2e', boxShadow: s.active ? `0 0 8px ${s.color}` : 'none', transition: 'all .4s' }} />
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Live metrics */}
+          <div>
+            <div style={{ fontSize: 9, letterSpacing: '0.25em', color: '#22d3ee', textTransform: 'uppercase', opacity: 0.5, marginBottom: 10 }}>Live Metrics</div>
+            {stats ? (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                {[
+                  { label: 'Total Users', value: stats.totalUsers, color: '#22d3ee', bar: Math.min(stats.totalUsers / 500, 1) },
+                  { label: 'New Today', value: `+${stats.newToday}`, color: '#4ade80', bar: Math.min(stats.newToday / 10, 1) },
+                  { label: 'This Week', value: `+${stats.newLast7}`, color: '#a78bfa', bar: Math.min(stats.newLast7 / 50, 1) },
+                  { label: 'Active 7d', value: stats.activeUsers, color: '#fb923c', bar: Math.min(stats.activeUsers / 200, 1) },
+                  ...(stats.mrr !== undefined ? [{ label: 'Est. MRR', value: `$${stats.mrr}`, color: '#f59e0b', bar: Math.min(stats.mrr / 500, 1) }] : []),
+                ].map(s => (
+                  <div key={s.label}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 5 }}>
+                      <div style={{ fontSize: 10, color: '#334155', letterSpacing: '0.04em' }}>{s.label}</div>
+                      <div style={{ fontSize: 15, fontWeight: 800, color: s.color, textShadow: `0 0 10px ${s.color}66` }}>{s.value}</div>
+                    </div>
+                    <div style={{ height: 2, background: 'rgba(255,255,255,0.04)', borderRadius: 99, overflow: 'hidden' }}>
+                      <div style={{ height: '100%', width: `${Math.max((s.bar || 0.03) * 100, 3)}%`, background: `linear-gradient(90deg, ${s.color}88, ${s.color})`, borderRadius: 99, transition: 'width 1.2s cubic-bezier(.22,1,.36,1)', boxShadow: `0 0 8px ${s.color}66` }} />
+                    </div>
                   </div>
                 ))}
-                {!stats.recentSignups?.length && <div style={{ color: '#0e2a3a' }}>No recent signups</div>}
+              </div>
+            ) : (
+              <div style={{ fontSize: 11, color: '#1e3a4a', lineHeight: 1.7, padding: '10px', background: 'rgba(6,182,212,0.03)', border: '1px solid rgba(6,182,212,0.06)', borderRadius: 8 }}>
+                Activate Jarvis to load live site data.
+              </div>
+            )}
+          </div>
+
+          {/* Recent signups */}
+          {stats?.recentSignups?.length > 0 && (
+            <div>
+              <div style={{ fontSize: 9, letterSpacing: '0.25em', color: '#22d3ee', textTransform: 'uppercase', opacity: 0.5, marginBottom: 10 }}>Recent Signups</div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
+                {stats.recentSignups.slice(0, 5).map((email, i) => (
+                  <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '5px 8px', background: 'rgba(6,182,212,0.03)', border: '1px solid rgba(6,182,212,0.06)', borderRadius: 6 }}>
+                    <div style={{ width: 5, height: 5, borderRadius: '50%', background: '#22d3ee', opacity: 1 - i * 0.15, flexShrink: 0 }} />
+                    <div style={{ fontSize: 10, color: '#334155', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{email}</div>
+                  </div>
+                ))}
               </div>
             </div>
-          </>
-        ) : (
-          <div style={{ fontSize: 12, color: '#1e3a4a', lineHeight: 1.6 }}>
-            Stats will appear after first Jarvis response.
-          </div>
-        )}
+          )}
+        </div>
 
-        {/* Voice state indicator */}
-        <div style={{ marginTop: 'auto', padding: '12px', background: 'rgba(6,182,212,0.04)', border: '1px solid rgba(6,182,212,0.08)', borderRadius: 10 }}>
-          <div style={{ fontSize: 10, color: '#22d3ee', opacity: 0.5, letterSpacing: '0.15em', textTransform: 'uppercase', marginBottom: 8 }}>System Status</div>
-          {[
-            { label: 'Wake Word', active: voiceState !== 'idle' },
-            { label: 'Mic', active: voiceState === 'listening' || voiceState === 'awake' },
-            { label: 'Processing', active: voiceState === 'thinking' },
-            { label: 'Speech Out', active: voiceState === 'speaking' },
-          ].map(s => (
-            <div key={s.label} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
-              <div style={{ fontSize: 11, color: '#334155' }}>{s.label}</div>
-              <div style={{ width: 6, height: 6, borderRadius: '50%', background: s.active ? '#4ade80' : '#1e293b', boxShadow: s.active ? '0 0 6px #4ade80' : 'none', transition: 'all .3s' }} />
-            </div>
-          ))}
+        {/* Bottom — holographic footer */}
+        <div style={{ padding: '14px 20px', borderTop: '1px solid rgba(6,182,212,0.08)', position: 'relative' }}>
+          <div style={{ height: 1, background: 'linear-gradient(90deg, transparent, rgba(6,182,212,0.3), transparent)', marginBottom: 12 }} />
+          {/* Animated scan line */}
+          <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 1, background: 'linear-gradient(90deg, transparent 0%, #22d3ee 50%, transparent 100%)', animation: 'scan-line 3s linear infinite', opacity: 0.4 }} />
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <div style={{ fontSize: 9, color: '#0e4a5a', letterSpacing: '0.15em' }}>JARVIS v2.0</div>
+            <div style={{ fontSize: 9, color: '#0e4a5a', letterSpacing: '0.1em' }}>duee.online</div>
+          </div>
+          {/* Corner accent lines */}
+          <div style={{ position: 'absolute', bottom: 8, left: 20, width: 20, height: 1, background: '#22d3ee', opacity: 0.3 }} />
+          <div style={{ position: 'absolute', bottom: 8, left: 20, width: 1, height: 20, background: '#22d3ee', opacity: 0.3 }} />
+          <div style={{ position: 'absolute', bottom: 8, right: 20, width: 20, height: 1, background: '#22d3ee', opacity: 0.3 }} />
+          <div style={{ position: 'absolute', bottom: 8, right: 20, width: 1, height: 20, background: '#22d3ee', opacity: 0.3 }} />
         </div>
       </div>
 
@@ -502,6 +556,10 @@ export default function JarvisPage() {
         @keyframes mic-glow {
           0%, 100% { box-shadow: 0 0 20px rgba(34,211,238,0.2); }
           50% { box-shadow: 0 0 40px rgba(34,211,238,0.4); }
+        }
+        @keyframes scan-line {
+          0% { transform: translateX(-100%); }
+          100% { transform: translateX(200%); }
         }
       `}</style>
     </div>
