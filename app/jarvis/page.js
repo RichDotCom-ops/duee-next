@@ -11,18 +11,50 @@ function getGreeting() {
   return 'Good evening, Boss. Ready when you are. What can I do for you?';
 }
 
-// Unlock audio context — must be called from a real user click
+let audioUnlocked = false;
+
 function unlockAudio() {
-  if (typeof window === 'undefined') return;
-  const u = new SpeechSynthesisUtterance('');
-  u.volume = 0;
-  window.speechSynthesis.speak(u);
-  window.speechSynthesis.cancel();
+  if (typeof window === 'undefined' || audioUnlocked) return;
+  // Play a real silent sound via AudioContext to unlock audio on ChromeOS
+  try {
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    const buf = ctx.createBuffer(1, 1, 22050);
+    const src = ctx.createBufferSource();
+    src.buffer = buf;
+    src.connect(ctx.destination);
+    src.start(0);
+    ctx.resume();
+  } catch {}
+  // Also prime speechSynthesis
+  try {
+    const u = new SpeechSynthesisUtterance(' ');
+    u.volume = 0; u.rate = 10;
+    window.speechSynthesis.speak(u);
+    setTimeout(() => window.speechSynthesis.cancel(), 100);
+  } catch {}
+  audioUnlocked = true;
+}
+
+function getBestVoice() {
+  const voices = window.speechSynthesis.getVoices();
+  if (!voices.length) return null;
+  return (
+    voices.find(v => v.name === 'Google UK English Male') ||
+    voices.find(v => v.name.includes('Microsoft David')) ||
+    voices.find(v => v.name.includes('Microsoft Mark')) ||
+    voices.find(v => v.name.includes('Google US English') && v.name.toLowerCase().includes('male')) ||
+    voices.find(v => v.lang === 'en-GB') ||
+    voices.find(v => v.lang === 'en-US') ||
+    voices.find(v => v.lang.startsWith('en')) ||
+    voices[0]
+  );
 }
 
 function speak(text, onStart, onEnd) {
-  if (typeof window === 'undefined' || !window.speechSynthesis) return;
-  window.speechSynthesis.cancel();
+  if (typeof window === 'undefined' || !window.speechSynthesis) { if (onEnd) onEnd(); return; }
+
+  const synth = window.speechSynthesis;
+  synth.cancel();
 
   const clean = text
     .replace(/\*\*([^*]+)\*\*/g, '$1')
@@ -30,51 +62,61 @@ function speak(text, onStart, onEnd) {
     .replace(/#{1,3}\s/g, '')
     .replace(/`([^`]+)`/g, '$1')
     .replace(/\n+/g, '. ')
-    .replace(/[^\w\s,.'!?()-]/g, '')
+    .replace(/[^\w\s,.'!?$%()-]/g, ' ')
+    .replace(/\s+/g, ' ')
     .trim()
-    .slice(0, 500);
+    .slice(0, 450);
 
   if (!clean) { if (onEnd) onEnd(); return; }
 
   function doSpeak() {
     const utter = new SpeechSynthesisUtterance(clean);
-    const voices = window.speechSynthesis.getVoices();
-    const preferred = [
-      voices.find(v => v.name === 'Google UK English Male'),
-      voices.find(v => v.name.includes('Microsoft David')),
-      voices.find(v => v.name.includes('Microsoft Mark')),
-      voices.find(v => v.lang === 'en-GB' && !v.name.toLowerCase().includes('female')),
-      voices.find(v => v.lang.startsWith('en-')),
-    ].find(Boolean);
-
-    if (preferred) utter.voice = preferred;
-    utter.pitch = 0.82;
+    const voice = getBestVoice();
+    if (voice) utter.voice = voice;
+    utter.pitch = 0.85;
     utter.rate = 1.0;
     utter.volume = 1.0;
-    utter.onstart = () => { if (onStart) onStart(); };
-    utter.onend = () => { if (onEnd) onEnd(); };
-    utter.onerror = (e) => { console.warn('Speech error:', e.error); if (onEnd) onEnd(); };
 
-    // Resume in case Chrome paused it, then speak
-    window.speechSynthesis.resume();
-    window.speechSynthesis.speak(utter);
+    let started = false;
+    let keepAlive;
 
-    // Chrome bug: speechSynthesis stops after ~15s of page idle — keep it alive
-    const keepAlive = setInterval(() => {
-      if (!window.speechSynthesis.speaking) { clearInterval(keepAlive); return; }
-      window.speechSynthesis.pause();
-      window.speechSynthesis.resume();
-    }, 10000);
+    utter.onstart = () => {
+      started = true;
+      if (onStart) onStart();
+      // Keep Chrome alive — it pauses after ~15s idle
+      keepAlive = setInterval(() => {
+        if (!synth.speaking) { clearInterval(keepAlive); return; }
+        synth.pause(); synth.resume();
+      }, 8000);
+    };
     utter.onend = () => { clearInterval(keepAlive); if (onEnd) onEnd(); };
-    utter.onerror = () => { clearInterval(keepAlive); if (onEnd) onEnd(); };
+    utter.onerror = (e) => {
+      clearInterval(keepAlive);
+      console.warn('TTS error:', e.error);
+      if (onEnd) onEnd();
+    };
+
+    synth.resume();
+    synth.speak(utter);
+
+    // Chromebook fallback: if nothing started after 2s, retry once
+    setTimeout(() => {
+      if (!started && !synth.speaking) {
+        synth.cancel();
+        const u2 = new SpeechSynthesisUtterance(clean);
+        u2.volume = 1; u2.rate = 1; u2.pitch = 0.85;
+        u2.onend = () => { if (onEnd) onEnd(); };
+        synth.speak(u2);
+      }
+    }, 2000);
   }
 
-  // Wait for voices to load if empty
-  if (window.speechSynthesis.getVoices().length === 0) {
-    window.speechSynthesis.onvoiceschanged = () => { doSpeak(); };
-    setTimeout(doSpeak, 500); // fallback
+  const voices = synth.getVoices();
+  if (!voices.length) {
+    synth.onvoiceschanged = () => { synth.onvoiceschanged = null; setTimeout(doSpeak, 100); };
+    setTimeout(doSpeak, 800); // hard fallback
   } else {
-    setTimeout(doSpeak, 150);
+    setTimeout(doSpeak, 100);
   }
 }
 
