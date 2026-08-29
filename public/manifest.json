@@ -1,0 +1,20 @@
+{
+  "name": "duee. — AI Student Planner",
+  "short_name": "duee.",
+  "description": "Track assignments, chat with your AI tutor, and never miss a deadline.",
+  "start_url": "/dashboard",
+  "display": "standalone",
+  "background_color": "#0a0f1e",
+  "theme_color": "#16a34a",
+  "orientation": "portrait",
+  "icons": [
+    {
+      "src": "/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ],
+  "screenshots": [],
+  "categories": ["education", "productivity"]
+}
