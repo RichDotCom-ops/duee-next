@@ -12,8 +12,26 @@ function dbg(msg) {
 
 // Global audio handle so stop command can kill it immediately
 let _audio = null;
+let _audioCtx = null;
+
 function stopAudio() {
   if (_audio) { try { _audio.pause(); _audio.src = ''; } catch {} _audio = null; }
+}
+
+// Must be called during a direct user gesture (button click)
+// Unlocks HTML5 Audio autoplay on Chromebook/Chrome
+function unlockAudioContext() {
+  try {
+    if (_audioCtx) { _audioCtx.resume(); return; }
+    _audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    const buf = _audioCtx.createBuffer(1, 1, 22050);
+    const src = _audioCtx.createBufferSource();
+    src.buffer = buf;
+    src.connect(_audioCtx.destination);
+    src.start(0);
+    _audioCtx.resume();
+    dbg('AudioContext unlocked');
+  } catch(e) { dbg('AudioContext unlock err: ' + e); }
 }
 
 function getGreeting() {
@@ -49,32 +67,56 @@ async function speak(text, secret, onEnd) {
     if (!res.ok) {
       const msg = await res.text();
       dbg(`TTS API error ${res.status}: ${msg}`);
+      // Don't immediately call onEnd — leave in speaking state so user sees the failure
+      // onEnd stays pending; the user must see the error in debug log
       if (onEnd) onEnd();
       return;
     }
 
     const blob = await res.blob();
+    dbg(`blob size: ${blob.size} bytes type: ${blob.type}`);
+
+    if (blob.size < 100) {
+      dbg('blob too small — likely empty response');
+      if (onEnd) onEnd();
+      return;
+    }
+
     const url = URL.createObjectURL(blob);
     const audio = new Audio(url);
     _audio = audio;
 
-    audio.onended = () => {
-      dbg('audio ended');
-      URL.revokeObjectURL(url);
-      if (_audio === audio) _audio = null;
-      if (onEnd) onEnd();
-    };
-    audio.onerror = (e) => {
-      dbg('audio element error: ' + (e.message || 'unknown'));
-      URL.revokeObjectURL(url);
-      if (_audio === audio) _audio = null;
-      if (onEnd) onEnd();
-    };
+    // Resume AudioContext in case it was suspended
+    if (_audioCtx && _audioCtx.state === 'suspended') {
+      _audioCtx.resume().catch(() => {});
+    }
 
-    await audio.play();
-    dbg('audio playing ✓');
+    await new Promise((resolve, reject) => {
+      audio.oncanplaythrough = () => {
+        dbg('audio canplaythrough');
+        audio.play()
+          .then(() => { dbg('audio playing ✓'); })
+          .catch(err => { dbg('audio.play() rejected: ' + err.message); reject(err); });
+      };
+      audio.onended = () => {
+        dbg('audio ended ✓');
+        URL.revokeObjectURL(url);
+        if (_audio === audio) _audio = null;
+        resolve();
+      };
+      audio.onerror = (e) => {
+        const code = audio.error?.code;
+        dbg(`audio element error code=${code}`);
+        URL.revokeObjectURL(url);
+        if (_audio === audio) _audio = null;
+        reject(new Error('audio error ' + code));
+      };
+      audio.load();
+    });
+
   } catch (e) {
     dbg('speak error: ' + e.message);
+  } finally {
     if (onEnd) onEnd();
   }
 }
@@ -551,7 +593,7 @@ export default function JarvisPage() {
         {/* Mic button */}
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10 }}>
           <button
-            onClick={() => { if (isActive) { stopListening(); } else { startListening(); } }}
+            onClick={() => { if (isActive) { stopListening(); } else { unlockAudioContext(); startListening(); } }}
             style={{
               width: 76, height: 76, borderRadius: '50%',
               background: isActive ? 'rgba(34,211,238,0.12)' : 'rgba(6,182,212,0.04)',
@@ -576,6 +618,7 @@ export default function JarvisPage() {
             <button
               onClick={() => {
                 dbg('Manual voice test triggered');
+                unlockAudioContext();
                 speak('Hello Boss, ElevenLabs voice test successful.', secretRef.current, () => dbg('test speak done'));
               }}
               style={{ fontSize: 10, color: '#a78bfa', background: 'rgba(167,139,250,0.08)', border: '1px solid rgba(167,139,250,0.2)', borderRadius: 6, padding: '4px 10px', cursor: 'pointer', fontFamily: 'inherit', letterSpacing: '0.05em' }}>
