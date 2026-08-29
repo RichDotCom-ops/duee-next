@@ -133,7 +133,7 @@ async function callModel(model, system, messages) {
       body: JSON.stringify({
         model,
         messages: [{ role: 'system', content: system }, ...messages],
-        max_tokens: 8000,
+        max_tokens: 2000,
         temperature: 0.65,
       }),
     });
