@@ -323,12 +323,17 @@ export default function JarvisPage() {
   const sendMsg = useCallback(async (text) => {
     const msg = text.trim();
     if (!msg || loadingRef.current) return;
+
+    // Kill any queued send timer and clear buffer immediately
+    clearTimeout(sendTimerRef.current);
+    finalBufRef.current = '';
     setTranscript(''); setLastWords(msg);
 
     const userMsg = { role: 'user', content: msg, id: Date.now() };
     const history = [...messagesRef.current, userMsg];
     setMessages(history); messagesRef.current = history;
-    setVoiceState('thinking'); setLoading(true); loadingRef.current = true;
+    setVoiceState('thinking'); stateRef.current = 'thinking';
+    setLoading(true); loadingRef.current = true;
 
     try {
       const res = await fetch('/api/jarvis', {
@@ -343,10 +348,19 @@ export default function JarvisPage() {
       const aiMsg = { role: 'assistant', content: reply, id: Date.now() + 1 };
       const next = [...history, aiMsg];
       setMessages(next); messagesRef.current = next;
-      setVoiceState('speaking');
-      speak(reply, secretRef.current, () => { setVoiceState('listening'); });
+      setVoiceState('speaking'); stateRef.current = 'speaking';
+      // Clear any speech the mic picked up while Jarvis was thinking
+      finalBufRef.current = '';
+      clearTimeout(sendTimerRef.current);
+      speak(reply, secretRef.current, () => {
+        // Small pause before going back to listening so mic doesn't catch Jarvis's last words
+        setTimeout(() => {
+          setVoiceState('listening'); stateRef.current = 'listening';
+          finalBufRef.current = '';
+        }, 400);
+      });
     } catch {
-      setVoiceState('listening');
+      setVoiceState('listening'); stateRef.current = 'listening';
     } finally { setLoading(false); loadingRef.current = false; }
   }, []);
 
@@ -388,8 +402,13 @@ export default function JarvisPage() {
         return;
       }
 
-      // Don't send if already processing
-      if (stateRef.current === 'thinking' || stateRef.current === 'speaking') return;
+      // Ignore speech while Jarvis is thinking or speaking
+      if (stateRef.current === 'thinking' || stateRef.current === 'speaking') {
+        // Discard anything collected so it doesn't fire after state changes
+        finalBufRef.current = '';
+        clearTimeout(sendTimerRef.current);
+        return;
+      }
 
       if (final) {
         finalBufRef.current += ' ' + final.trim();
@@ -398,8 +417,9 @@ export default function JarvisPage() {
           const msg = finalBufRef.current.trim();
           finalBufRef.current = '';
           setTranscript('');
-          if (msg.length > 2) sendMsg(msg);
-        }, 700);
+          // Double-check state hasn't changed to thinking/speaking while timer was pending
+          if (msg.length > 2 && stateRef.current === 'listening') sendMsg(msg);
+        }, 800);
       }
     };
 
